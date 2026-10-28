@@ -56,12 +56,15 @@ docker compose -p condo-smoke -f compose.smoke.yaml down -v
 The smoke stack uses only disposable PostgreSQL data and test credentials. It does not
 touch the normal Compose stack or local development database.
 
-CI runs the source checks, then tests the built production image with PostgreSQL,
-migrations, a non-root user, and a read-only filesystem. It also checks sign-in HTML,
-compiled assets, and secret-file exclusion. After success, pushes to `main` and `v*`
-release tags publish AMD64/ARM64 images to `ghcr.io/<owner>/<repository>`, including
-`sha-<full-commit>` tags, provenance, and an SBOM. ARM64 is built but not runtime-tested
-by the AMD64 smoke runner. Enable the repository's Actions/package permissions as needed.
+CI type-checks and builds the app, lints it, then runs the unit and PostgreSQL-backed
+functional suites separately. It next tests the built production image with PostgreSQL,
+migrations, a non-root user, and a read-only filesystem, checking sign-in HTML, compiled
+assets, and secret-file exclusion. After success, pushes to the default branch and `v*`
+tags publish AMD64/ARM64 images to `ghcr.io/<owner>/<repository>`, including the full
+commit SHA, the Git tag, semantic-version tags, provenance, and an SBOM. The default
+branch image is also tagged `latest`. A `v*` tag additionally creates a GitHub Release
+with generated release notes. ARM64 is built but not runtime-tested by the AMD64 smoke
+runner. Ensure GitHub Actions can write packages and repository contents.
 
 Any OCI registry works; GHCR is just the default publishing destination. For a different registry:
 
