@@ -1,4 +1,4 @@
-name: Checks
+name: CI/CD
 on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
@@ -28,14 +28,24 @@ jobs:
         with:
           node-version: 24
           cache: yarn
-      - run: corepack enable
-      - run: yarn install --frozen-lockfile
-      - run: cp .env.example .env
-      - run: node ace generate:key
-      - run: yarn typecheck
-      - run: yarn lint
-      - run: yarn build
-      - run: yarn test
+      - name: Enable Corepack
+        run: corepack enable
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+      - name: Configure test environment
+        run: |
+          cp .env.example .env
+          node ace generate:key
+      - name: Type-check
+        run: yarn typecheck
+      - name: Lint
+        run: yarn lint
+      - name: Build application
+        run: yarn build
+      - name: Run unit tests
+        run: yarn test unit
+      - name: Run functional tests
+        run: yarn test functional
 
   container:
     needs: check
@@ -98,6 +108,7 @@ jobs:
           images: ghcr.io/${{ github.repository }}
           tags: |
             type=sha,format=long
+            type=ref,event=tag
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
@@ -111,3 +122,15 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=container-release
           cache-to: type=gha,mode=max,scope=container-release
+
+  release:
+    needs: publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag --generate-notes --title "$GITHUB_REF_NAME"
