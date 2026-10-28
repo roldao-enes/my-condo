@@ -20,11 +20,19 @@ databases, billing, IAM, or TLS certificates. No cloud resources have been creat
 | `DB_SSL_CA`                                        | Optional PEM trust chain from your provider, supplied through its secret manager; escaped newlines are accepted |
 | `DB_POOL_MAX`                                      | Maximum connections per process; image default `5`                                                              |
 | `TRUST_PROXY`                                      | Optional trusted proxy CIDR or named range supported by proxy-addr; unset trusts no forwarding headers          |
+| `AUDIT_LOG_DIR`                                    | Optional audit log directory (absolute, or relative to the app root); default `/app/tmp/audit`                  |
+| `AUDIT_LOG_MAX_BYTES`                              | Optional size of each sealed audit log file; default `1048576` (1 MiB), minimum `4096`                          |
 
 The image includes static assets and production dependencies, runs as UID/GID 1000,
 logs to stdout/stderr, and handles SIGTERM through AdonisJS. It contains no `.env` files
 or baked-in credentials. No application volume is needed; only `/tmp` and `/app/tmp`
 need temporary writable space when using a read-only root filesystem.
+
+Every state-changing request and `create:admin` run is written to the audit log files
+described in the README and mirrored to stdout as a structured `audit` log line. The default
+directory is inside `/app/tmp`, which is ephemeral on Cloud Run, ECS, and Kubernetes
+`emptyDir`. To retain the files themselves, mount a persistent volume writable by UID 1000
+and point `AUDIT_LOG_DIR` at it; otherwise rely on the platform log pipeline copy.
 
 `GET /health/live` checks the HTTP process. `GET /health/ready` checks PostgreSQL,
 returning 503 on failure. `/health` remains a readiness alias. Use liveness for process

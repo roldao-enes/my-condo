@@ -171,6 +171,7 @@ app/residency/application/      Transactional lifecycle use cases
 app/residency/domain/           Framework-independent date rules
 app/residency/infrastructure/   PostgreSQL read queries
 app/finances/                  Statement parsing and transactional finance use cases
+app/audit/                     Size-rotated audit log files and failure classification
 app/models/user.ts             Framework authentication model
 inertia/                       React presentation
 database/migrations/           Constraints and schema
@@ -180,6 +181,33 @@ Business rules do not live in React. People and units are independent of their d
 relationships. Ending a relationship never deletes its history. Database and audit writes
 are committed together. Future dates are rejected in the current immediate-action workflow;
 scheduled moves and overlapping historical-period validation are not implemented.
+
+### Audit Log Files
+
+Every state-changing command (login, logout, unit creation, onboarding, offboarding, all
+finance mutations, and `node ace create:admin`) appends one JSON line per attempt, whether
+it succeeded or failed. Each line has a UTC `timestamp`, an `event` such as
+`residency.unit.create`, an `outcome` (`success` or `failure`), the `actor`, request
+context, and a readable `message`:
+
+```text
+User #3 (admin@example.test) created unit #12 "1A" on floor "1"
+User #3 (admin@example.test) failed to offboard occupancy #9 on 2025-02-01: conflict: Esta relacao ja foi encerrada.
+Anonymous visitor failed to log in as "x@example.test": invalid email or password
+```
+
+Failures also carry `failure.kind`: `invalid_input`, `invalid_credentials`, `not_found`,
+`conflict`, `rejected` (business rule), or `error` (unexpected; the request still fails).
+Passwords and statement contents are never logged.
+
+Entries are appended to `audit-current.log`. When the next entry would exceed
+`AUDIT_LOG_MAX_BYTES` (default 1 MiB), that file is sealed and renamed after its first and
+last entry timestamps, for example
+`audit-2026-10-28T13-57-32.314Z_2026-10-29T08-12-03.901Z.log`. Sealed files are therefore
+evenly sized (each within one entry of the limit) and sort chronologically by name. The
+directory defaults to `tmp/audit` and can be changed with `AUDIT_LOG_DIR`; tests use
+`tmp/test-audit`. Entries are also mirrored to the application log. A failure to write
+the audit file is logged as an error but does not block the operation.
 
 ## Self-Hosting
 
