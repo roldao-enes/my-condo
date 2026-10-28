@@ -15,6 +15,7 @@ import type { HttpContext } from '@adonisjs/core/http'
 
 const AuthController = () => import('#controllers/auth_controller')
 const ResidencyController = () => import('#controllers/residency_controller')
+const FinancesController = () => import('#controllers/finances_controller')
 
 router.get('/health/live', ({ response }) => {
   response.header('Cache-Control', 'no-store')
@@ -46,5 +47,15 @@ router
     router.post('/units', [ResidencyController, 'createUnit'])
     router.post('/residents', [ResidencyController, 'onboard'])
     router.post('/occupancies/:id/offboard', [ResidencyController, 'offboard'])
+    router.get('/finances', [FinancesController, 'index'])
+    router.post('/finances/import', [FinancesController, 'import'])
+    router.post('/finances/charges', [FinancesController, 'charge'])
+    router.post('/finances/transactions/:id/category', [FinancesController, 'classify'])
+    router.post('/finances/transactions/:id/payments', [FinancesController, 'allocate'])
+    router.post('/finances/transactions/:id/resident', [FinancesController, 'identify'])
+    router.post('/finances/tags', [FinancesController, 'saveTag'])
+    router.post('/finances/tags/:id', [FinancesController, 'saveTag'])
+    router.post('/finances/tags/:id/remove', [FinancesController, 'deleteTag'])
+    router.post('/finances/payments/:id/remove', [FinancesController, 'unallocate'])
   })
   .use(middleware.auth())

@@ -18,10 +18,82 @@ TypeScript throughout: AdonisJS v6, React, Inertia, and PostgreSQL.
 - Transactional audit records and database constraints for duplicate active relationships.
 - Responsive overview, unit details, active residents, and historical relationships.
 - Portuguese date formatting, a Europe/Lisbon default, and EUR as the planned accounting currency.
+- Bank statement upload, duplicate-safe imports, expense classification, and a finance dashboard.
+- Resident quotas, partial payment matching, overdue balances, and audited match reversals.
 
-Payments, balance statements, email announcements, invitations, MFA, and retention automation
-are not implemented yet. This is the first working residency milestone, not a production-ready
-financial or statutory-notice system.
+Email announcements, invitations, MFA, and retention automation are not implemented yet.
+The finance dashboard is a management aid, not a certified accounting or statutory-notice system.
+
+### Finances
+
+After running migrations, administrators can open **Financas** in the sidebar and upload
+a UTF-8 bank statement (up to 2 MB / 10,000 movements). Tab, semicolon, and comma delimiters
+are supported, with optional headers and standard CSV quoting. Columns must appear in this order:
+
+```text
+date          value date    description                  amount    balance
+2025-01-03    2025-01-03    COMISSAO MANUTENCAO DE CONTA   -7,50     4.922,11
+```
+
+Use ISO dates (`YYYY-MM-DD`) or `DD/MM/YYYY`. Amounts may use Portuguese decimal commas
+and thousands separators, or decimal points without thousands separators. Quote decimal-comma
+values in comma-delimited CSV. Negative amounts are expenses; positive amounts are income.
+All amounts are stored as integer EUR cents. The entire file is validated before any writes;
+invalid imports leave no partial transactions. Original uploaded files are not retained.
+Reimporting the same movements, including overlapping statements, skips duplicates using all
+five normalized fields and an occurrence counter, preserving existing classifications and matches.
+Corrected bank records with different fields are distinct movements and require review.
+
+Classify expenses as recurring or extraordinary. With **Memorizar nome** enabled (the default),
+the bank description is saved in **Etiquetas** and future matching imports are classified
+automatically. Matching ignores case, accents, punctuation, and repeated whitespace, but does
+not guess spelling variations. Tags have editable labels, classifications, and match patterns:
+**Descricao completa** matches the entire normalized bank description; **Contem nome** matches
+a complete name/phrase within it, allowing changing bank references. Exact matches take priority;
+more specific contained names take priority over their shorter forms. Multiple unrelated matching
+names are ambiguous and leave the transaction unclassified. Expenses and incoming resident payments
+are matched separately. New movements without a matching tag remain unclassified.
+
+Identifying an incoming resident payment, or matching it to a quota with name learning enabled,
+saves the resident/unit identity for future statements. Recognition displays the resident and
+prioritizes their unpaid quotas but does **not** allocate funds or reduce debt automatically.
+Disable name learning for shared deposits or single-transaction exceptions. Identifications can
+be corrected or cleared independently of payment allocations. Existing unambiguous expense
+classifications and resident payment matches seed the registry when the migration runs.
+Editing/deleting tags affects future imports only; existing expense classifications, resident
+identities, and payment allocations remain unchanged. Deleting a tag removes its displayed
+label from historical transactions. Reimporting duplicates never reapplies new rules to them.
+
+The period selector scopes bank movements and expense totals. Bank balance is always the latest
+imported statement balance, not a reconstructed current balance or a sum of imported balances.
+Import statements from one bank account only; multi-account consolidation is not supported.
+
+Register quotas against an explicit resident/unit relationship, then associate incoming bank
+payments with those quotas. Payments can be partial or split across quotas and cannot exceed
+either the available deposit or the unpaid quota. Matches can be removed with an audit trail.
+Unmatched deposits do not reduce resident debt. Outstanding and overdue debt use all recorded
+quotas, independently of the bank period filter; quotas due before today in Europe/Lisbon are
+overdue. Record opening debt as dated quotas when starting with historical balances. Quotas
+are entered manually, not automatically generated each month. Historical debt stays assigned
+to the original resident even after offboarding. Charges are not editable in this milestone;
+verify the resident, amount, and due date before submitting.
+
+### Financial Summary and Word Export
+
+Open **Resumo financeiro** for a dated summary of the condominium's recorded finances, then
+select **Copiar para Word**. The clipboard contains HTML tables and a plain-text alternative;
+Word can paste the HTML as editable tables (use source formatting when choosing paste options).
+If the browser cannot write rich clipboard data, the button falls back to tab-separated text
+and reports that fallback. Clipboard access requires a supported browser on HTTPS or localhost
+and may require permission. Failed copies show an error and can be retried.
+
+The preview and clipboard use the same report. It includes all imported movements dated on or
+before today in Europe/Lisbon, regardless of dashboard search, category, or month filters:
+bank balance with its statement date, income/outgoings, expense categories and names/tags,
+recorded quotas, allocated/unallocated income, and outstanding/overdue balances per resident.
+Future-dated bank movements and their payment allocations are excluded; unpaid recorded quotas
+include future due dates, which are separated from overdue debt. The statement balance is not
+a live bank balance, and the report is limited to data recorded in the application.
 
 ## Local Development
 
@@ -98,6 +170,7 @@ app/controllers/                HTTP / Inertia presentation
 app/residency/application/      Transactional lifecycle use cases
 app/residency/domain/           Framework-independent date rules
 app/residency/infrastructure/   PostgreSQL read queries
+app/finances/                  Statement parsing and transactional finance use cases
 app/models/user.ts             Framework authentication model
 inertia/                       React presentation
 database/migrations/           Constraints and schema
@@ -166,8 +239,8 @@ The application itself remains private/unlicensed until its owner chooses a lice
 
 ## Next Milestones
 
-1. Unit-based immutable EUR ledger: integer cents, charges, payments, reversals, statements,
-   and historical responsible-party attribution. No automatic transfer of old debt to a buyer.
+1. Extend finance tracking with charge corrections, recurring quota schedules, printable
+   statements, and a full immutable ledger. No automatic transfer of old debt to a buyer.
 2. PostgreSQL-backed email jobs, SMTP configuration, recipient snapshots, retry history,
    and announcement drafts. Offboarding excludes ended relationships from future mailings.
 3. Meeting notices and calendar invitations, including updates/cancellations and printable

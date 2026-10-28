@@ -1013,6 +1013,293 @@ label select {
     transform: translateY(0);
   }
 }
+.finance-period,
+.finance-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.finance-period {
+  justify-content: space-between;
+}
+.finance-period label {
+  margin: 0;
+  min-width: 200px;
+}
+.finance-stats {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.finance-stats .stat > strong {
+  font-size: 24px;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.finance-breakdown {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 28px;
+  padding-bottom: 28px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--border);
+}
+.finance-breakdown > div {
+  display: grid;
+  grid-template-columns: 8px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+}
+.finance-breakdown strong {
+  font-weight: 500;
+  white-space: nowrap;
+}
+.finance-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: #939b96;
+}
+.finance-dot.recurring {
+  background: #47816b;
+}
+.finance-dot.extraordinary {
+  background: #b27678;
+}
+.finance-breakdown progress {
+  grid-column: 1 / -1;
+  width: 100%;
+  height: 5px;
+  accent-color: #939b96;
+}
+.finance-breakdown > div:nth-child(2) progress {
+  accent-color: #47816b;
+}
+.finance-breakdown > div:nth-child(3) progress {
+  accent-color: #b27678;
+}
+.finance-toolbar .search-box {
+  flex: 1;
+  min-width: 200px;
+}
+.finance-select {
+  border: 1px solid var(--border);
+  background: white;
+  border-radius: 5px;
+  padding: 9px;
+  font-size: 12px;
+  min-height: 39px;
+  max-width: 220px;
+}
+.finance-number {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+#finance-panel table {
+  min-width: 720px;
+}
+.finance-transactions td:first-child {
+  white-space: nowrap;
+}
+.finance-negative {
+  color: #a34843;
+}
+.finance-positive {
+  color: #17664f;
+}
+.finance-overdue {
+  background: #fff0ee;
+  color: #a34843;
+}
+.finance-subtext {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  margin-top: 5px;
+}
+.finance-description {
+  min-width: 190px;
+  max-width: 340px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.finance-upload-progress {
+  width: 100%;
+  accent-color: var(--green);
+}
+.finance-payment-summary {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.finance-match {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
+  margin-bottom: 18px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.finance-match small {
+  display: block;
+  margin-top: 5px;
+  color: var(--muted);
+}
+.finance-tag-actions {
+  display: flex;
+  gap: 5px;
+}
+.finance-tag-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: var(--green);
+  margin-top: 6px;
+  font-size: 10px;
+}
+.finance-tag-label svg {
+  flex-shrink: 0;
+}
+.finance-resident-name {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 7px;
+  color: var(--green);
+}
+.finance-remember {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 400;
+  margin: 8px 0 0;
+}
+.finance-remember input {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--green);
+}
+.finance-identity {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.finance-identity > .button {
+  margin-top: 12px;
+}
+dialog:has(.finance-report) {
+  width: 860px;
+  max-width: min(860px, calc(100vw - 28px));
+}
+.finance-report-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.finance-report-heading h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.finance-report-heading p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.finance-report-heading .button {
+  flex-shrink: 0;
+}
+.finance-report-section {
+  margin-top: 24px;
+}
+.finance-report-section h3 {
+  margin: 0 0 12px;
+}
+.finance-report-section table {
+  min-width: 420px;
+}
+.finance-report-section table.finance-report-totals {
+  min-width: 0;
+  table-layout: fixed;
+}
+.finance-report-totals th:last-child,
+.finance-report-totals td:last-child {
+  width: 40%;
+  text-align: right;
+}
+.finance-report-section td {
+  padding: 12px;
+}
+.finance-report-section th {
+  padding: 12px;
+}
+.finance-report-section td:last-child {
+  white-space: nowrap;
+}
+.finance-copy-notice {
+  margin-top: 16px;
+}
+@media (max-width: 1100px) {
+  .finance-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .finance-stats .stat:nth-child(3) {
+    border-left: 0;
+  }
+  .finance-stats .stat:nth-child(n + 3) {
+    border-top: 1px solid var(--border);
+  }
+  .finance-breakdown {
+    gap: 14px;
+  }
+  .finance-breakdown > div {
+    grid-template-columns: 8px 1fr;
+  }
+  .finance-breakdown strong {
+    grid-column: 2;
+  }
+}
+@media (max-width: 540px) {
+  .sidebar nav {
+    gap: 0;
+  }
+  .sidebar .nav-link {
+    flex-direction: column;
+    gap: 3px;
+    height: 52px;
+    padding: 4px;
+    font-size: 10px;
+  }
+  .finance-toolbar > .search-box {
+    flex-basis: 100%;
+  }
+  .finance-breakdown {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  .finance-breakdown > div {
+    grid-template-columns: 8px 1fr auto;
+  }
+  .finance-breakdown strong {
+    grid-column: auto;
+  }
+  .finance-period {
+    align-items: flex-start;
+  }
+  .finance-stats .stat > strong {
+    font-size: 21px;
+  }
+}
 @media (max-width: 1100px) {
   .app-shell {
     grid-template-columns: 210px minmax(0, 1fr);
@@ -1233,6 +1520,16 @@ label select {
   }
 }
 @media (max-width: 380px) {
+  .finance-stats .stat {
+    display: block;
+  }
+  .finance-stats .stat-top {
+    justify-content: space-between;
+    flex-direction: row;
+  }
+  .finance-stats .stat > strong {
+    margin: 8px 0;
+  }
   main {
     padding: 24px 14px;
   }
