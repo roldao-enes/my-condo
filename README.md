@@ -44,7 +44,26 @@ Reimporting the same movements, including overlapping statements, skips duplicat
 five normalized fields and an occurrence counter, preserving existing classifications and matches.
 Corrected bank records with different fields are distinct movements and require review.
 
-Classify expenses as recurring or extraordinary; new expenses remain unclassified until reviewed.
+Classify expenses as recurring or extraordinary. With **Memorizar nome** enabled (the default),
+the bank description is saved in **Etiquetas** and future matching imports are classified
+automatically. Matching ignores case, accents, punctuation, and repeated whitespace, but does
+not guess spelling variations. Tags have editable labels, classifications, and match patterns:
+**Descricao completa** matches the entire normalized bank description; **Contem nome** matches
+a complete name/phrase within it, allowing changing bank references. Exact matches take priority;
+more specific contained names take priority over their shorter forms. Multiple unrelated matching
+names are ambiguous and leave the transaction unclassified. Expenses and incoming resident payments
+are matched separately. New movements without a matching tag remain unclassified.
+
+Identifying an incoming resident payment, or matching it to a quota with name learning enabled,
+saves the resident/unit identity for future statements. Recognition displays the resident and
+prioritizes their unpaid quotas but does **not** allocate funds or reduce debt automatically.
+Disable name learning for shared deposits or single-transaction exceptions. Identifications can
+be corrected or cleared independently of payment allocations. Existing unambiguous expense
+classifications and resident payment matches seed the registry when the migration runs.
+Editing/deleting tags affects future imports only; existing expense classifications, resident
+identities, and payment allocations remain unchanged. Deleting a tag removes its displayed
+label from historical transactions. Reimporting duplicates never reapplies new rules to them.
+
 The period selector scopes bank movements and expense totals. Bank balance is always the latest
 imported statement balance, not a reconstructed current balance or a sum of imported balances.
 Import statements from one bank account only; multi-account consolidation is not supported.
@@ -58,6 +77,23 @@ overdue. Record opening debt as dated quotas when starting with historical balan
 are entered manually, not automatically generated each month. Historical debt stays assigned
 to the original resident even after offboarding. Charges are not editable in this milestone;
 verify the resident, amount, and due date before submitting.
+
+### Financial Summary and Word Export
+
+Open **Resumo financeiro** for a dated summary of the condominium's recorded finances, then
+select **Copiar para Word**. The clipboard contains HTML tables and a plain-text alternative;
+Word can paste the HTML as editable tables (use source formatting when choosing paste options).
+If the browser cannot write rich clipboard data, the button falls back to tab-separated text
+and reports that fallback. Clipboard access requires a supported browser on HTTPS or localhost
+and may require permission. Failed copies show an error and can be retried.
+
+The preview and clipboard use the same report. It includes all imported movements dated on or
+before today in Europe/Lisbon, regardless of dashboard search, category, or month filters:
+bank balance with its statement date, income/outgoings, expense categories and names/tags,
+recorded quotas, allocated/unallocated income, and outstanding/overdue balances per resident.
+Future-dated bank movements and their payment allocations are excluded; unpaid recorded quotas
+include future due dates, which are separated from overdue debt. The statement balance is not
+a live bank balance, and the report is limited to data recorded in the application.
 
 ## Local Development
 

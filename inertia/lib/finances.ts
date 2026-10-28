@@ -7,6 +7,28 @@ export interface BankTransaction {
   amount: number
   balance: number
   category: ExpenseCategory
+  tag_id: number | null
+  tag_name: string | null
+  resident_id: number | null
+  unit_id: number | null
+  resident_name: string | null
+  unit_label: string | null
+}
+export interface FinanceTag {
+  id: number
+  name: string
+  pattern: string
+  match_type: 'exact' | 'contains'
+  category: 'recurring' | 'extraordinary' | 'resident_payment'
+  resident_id: number | null
+  unit_id: number | null
+  resident_name: string | null
+  unit_label: string | null
+}
+export const tagCategories = {
+  recurring: 'Recorrente',
+  extraordinary: 'Extraordinária',
+  resident_payment: 'Pagamento de residente',
 }
 export interface Account {
   resident_id: number

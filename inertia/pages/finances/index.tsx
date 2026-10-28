@@ -9,9 +9,14 @@ import {
   Search,
   Undo2,
   Wallet,
+  Tag,
+  UserRoundCheck,
+  FileText,
 } from 'lucide-react'
 import Shell from '../../components/shell'
 import Modal from '../../components/modal'
+import TagRegistry from '../../components/finance_tags'
+import FinanceReport from '../../components/finance_report'
 import { date, today } from '../../lib/types'
 import {
   amountInput,
@@ -23,6 +28,7 @@ import {
   type Charge,
   type ExpenseCategory,
   type Payment,
+  type FinanceTag,
 } from '../../lib/finances'
 
 interface Props {
@@ -30,15 +36,18 @@ interface Props {
   charges: Charge[]
   payments: Payment[]
   accounts: Account[]
+  tags: FinanceTag[]
 }
-type View = 'transactions' | 'expenses' | 'debt'
+type View = 'transactions' | 'expenses' | 'debt' | 'tags'
 
-export default function Finances({ transactions, charges, payments, accounts }: Props) {
+export default function Finances({ transactions, charges, payments, accounts, tags }: Props) {
   const [view, setView] = useState<View>('transactions')
   const [month, setMonth] = useState('')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('all')
-  const [dialog, setDialog] = useState<'import' | 'charge' | BankTransaction | null>(null)
+  const [dialog, setDialog] = useState<'import' | 'charge' | 'report' | BankTransaction | null>(
+    null
+  )
   const balances = financeBalances(charges, payments, today())
   const period = transactions.filter((transaction) => !month || transaction.date.startsWith(month))
   const income = period.reduce((sum, transaction) => sum + Math.max(0, transaction.amount), 0)
@@ -56,8 +65,12 @@ export default function Finances({ transactions, charges, payments, accounts }: 
       (category === 'all' ||
         (category === 'unmatched'
           ? transaction.amount > 0 && available(transaction) > 0
-          : transaction.amount < 0 && transaction.category === category)) &&
-      transaction.description.toLocaleLowerCase('pt-PT').includes(query.toLocaleLowerCase('pt-PT'))
+          : category === 'resident_payment'
+            ? transaction.amount > 0 && Boolean(transaction.resident_id)
+            : transaction.amount < 0 && transaction.category === category)) &&
+      `${transaction.description} ${transaction.tag_name || ''} ${transaction.resident_name || ''}`
+        .toLocaleLowerCase('pt-PT')
+        .includes(query.toLocaleLowerCase('pt-PT'))
   )
   const visibleCharges = balances.charges.filter((charge) =>
     `${charge.name} ${charge.unit_label} ${charge.description}`
@@ -78,6 +91,10 @@ export default function Finances({ transactions, charges, payments, accounts }: 
           </p>
         </div>
         <div className="heading-actions">
+          <button className="button secondary" onClick={() => setDialog('report')}>
+            <FileText size={17} />
+            Resumo financeiro
+          </button>
           <button
             className="button secondary"
             onClick={() => setDialog('charge')}
@@ -164,6 +181,7 @@ export default function Finances({ transactions, charges, payments, accounts }: 
               ['transactions', 'Movimentos'],
               ['expenses', 'Despesas'],
               ['debt', 'Dívida'],
+              ['tags', 'Etiquetas'],
             ] as const
           ).map(([key, label]) => (
             <button
@@ -188,13 +206,17 @@ export default function Finances({ transactions, charges, payments, accounts }: 
           <input
             aria-label="Pesquisar finanças"
             placeholder={
-              view === 'debt' ? 'Pesquisar residente ou quota...' : 'Pesquisar movimento...'
+              view === 'tags'
+                ? 'Pesquisar nome ou etiqueta...'
+                : view === 'debt'
+                  ? 'Pesquisar residente ou quota...'
+                  : 'Pesquisar movimento...'
             }
             value={query}
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        {view !== 'debt' && (
+        {(view === 'transactions' || view === 'expenses') && (
           <select
             className="finance-select"
             aria-label="Filtrar classificação"
@@ -208,11 +230,16 @@ export default function Finances({ transactions, charges, payments, accounts }: 
               </option>
             ))}
             {view === 'transactions' && <option value="unmatched">Entradas por associar</option>}
+            {view === 'transactions' && (
+              <option value="resident_payment">Pagamentos de residentes</option>
+            )}
           </select>
         )}
       </div>
       <section id="finance-panel" role="tabpanel" aria-labelledby={`tab-${view}`}>
-        {view === 'debt' ? (
+        {view === 'tags' ? (
+          <TagRegistry tags={tags} accounts={accounts} query={query} />
+        ) : view === 'debt' ? (
           <>
             <div className="section-heading">
               <h2>Saldos por residente</h2>
@@ -330,7 +357,15 @@ export default function Finances({ transactions, charges, payments, accounts }: 
                         {date(transaction.date)}
                         <small className="finance-subtext">{date(transaction.value_date)}</small>
                       </td>
-                      <td className="finance-description">{transaction.description}</td>
+                      <td className="finance-description">
+                        {transaction.description}
+                        {transaction.tag_name && (
+                          <small className="finance-tag-label">
+                            <Tag size={12} />
+                            {transaction.tag_name}
+                          </small>
+                        )}
+                      </td>
                       <td
                         className={`finance-number ${transaction.amount < 0 ? 'finance-negative' : 'finance-positive'}`}
                       >
@@ -342,15 +377,22 @@ export default function Finances({ transactions, charges, payments, accounts }: 
                         {transaction.amount < 0 ? (
                           <CategorySelect transaction={transaction} />
                         ) : (
-                          <button
-                            className="button secondary"
-                            onClick={() => setDialog(transaction)}
-                          >
-                            <CircleDollarSign size={15} />
-                            {available(transaction)
-                              ? `${money(available(transaction))} por associar`
-                              : 'Associado'}
-                          </button>
+                          <>
+                            <small className="finance-resident-name">
+                              {transaction.resident_name
+                                ? `${transaction.resident_name} · ${transaction.unit_label}`
+                                : 'Residente por identificar'}
+                            </small>
+                            <button
+                              className="button secondary"
+                              onClick={() => setDialog(transaction)}
+                            >
+                              <CircleDollarSign size={15} />
+                              {available(transaction)
+                                ? `${money(available(transaction))} por associar`
+                                : 'Associado'}
+                            </button>
+                          </>
                         )}
                       </td>
                     </tr>
@@ -370,12 +412,21 @@ export default function Finances({ transactions, charges, payments, accounts }: 
         )}
       </section>
       {dialog === 'import' && <ImportDialog onClose={close} />}
+      {dialog === 'report' && (
+        <FinanceReport
+          transactions={transactions}
+          charges={charges}
+          payments={payments}
+          onClose={close}
+        />
+      )}
       {dialog === 'charge' && <ChargeDialog accounts={accounts} onClose={close} />}
       {dialog && typeof dialog === 'object' && (
         <PaymentDialog
-          transaction={dialog}
+          transaction={transactions.find((transaction) => transaction.id === dialog.id) || dialog}
           charges={balances.charges}
           payments={payments}
+          accounts={accounts}
           onClose={close}
         />
       )}
@@ -418,24 +469,37 @@ function Empty({ text }: { text: string }) {
   )
 }
 function CategorySelect({ transaction }: { transaction: BankTransaction }) {
-  const form = useForm({ category: transaction.category })
+  const form = useForm({ category: transaction.category, remember: true })
   return (
-    <select
-      className="finance-select"
-      aria-label={`Classificação de ${transaction.description}`}
-      value={transaction.category}
-      disabled={form.processing}
-      onChange={(event) => {
-        form.transform(() => ({ category: event.target.value as ExpenseCategory }))
-        form.post(`/finances/transactions/${transaction.id}/category`, { preserveScroll: true })
-      }}
-    >
-      {Object.entries(categories).map(([key, label]) => (
-        <option key={key} value={key}>
-          {label}
-        </option>
-      ))}
-    </select>
+    <div>
+      <select
+        className="finance-select"
+        aria-label={`Classificação de ${transaction.description}`}
+        value={transaction.category}
+        disabled={form.processing}
+        onChange={(event) => {
+          form.transform(() => ({
+            category: event.target.value as ExpenseCategory,
+            remember: form.data.remember,
+          }))
+          form.post(`/finances/transactions/${transaction.id}/category`, { preserveScroll: true })
+        }}
+      >
+        {Object.entries(categories).map(([key, label]) => (
+          <option key={key} value={key}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <label className="finance-remember">
+        <input
+          type="checkbox"
+          checked={form.data.remember}
+          onChange={(event) => form.setData('remember', event.target.checked)}
+        />
+        Memorizar nome
+      </label>
+    </div>
   )
 }
 function ImportDialog({ onClose }: { onClose: () => void }) {
@@ -574,16 +638,18 @@ function PaymentDialog({
   transaction,
   charges,
   payments,
+  accounts,
   onClose,
 }: {
   transaction: BankTransaction
   charges: ReturnType<typeof financeBalances>['charges']
   payments: Payment[]
+  accounts: Account[]
   onClose: () => void
 }) {
   const matches = payments.filter((payment) => payment.transaction_id === transaction.id)
   const available = transaction.amount - matches.reduce((sum, payment) => sum + payment.amount, 0)
-  const form = useForm({ chargeId: '', amount: '' })
+  const form = useForm({ chargeId: '', amount: '', remember: true })
   const remove = useForm({})
   return (
     <Modal title="Associar pagamento" onClose={onClose}>
@@ -594,6 +660,11 @@ function PaymentDialog({
         </span>
         <span className="muted">Por associar: {money(available)}</span>
       </div>
+      <ResidentIdentity
+        key={`${transaction.id}:${transaction.resident_id}:${transaction.unit_id}`}
+        transaction={transaction}
+        accounts={accounts}
+      />
       {matches.map((payment) => {
         const charge = charges.find((item) => item.id === payment.charge_id)!
         return (
@@ -638,6 +709,7 @@ function PaymentDialog({
               onChange={(event) => {
                 const charge = charges.find((item) => item.id === Number(event.target.value))
                 form.setData({
+                  ...form.data,
                   chargeId: event.target.value,
                   amount: charge ? amountInput(Math.min(available, charge.outstanding)) : '',
                 })
@@ -646,6 +718,17 @@ function PaymentDialog({
               <option value="">Selecionar quota</option>
               {charges
                 .filter((charge) => charge.outstanding > 0)
+                .sort(
+                  (first, second) =>
+                    Number(
+                      second.resident_id === transaction.resident_id &&
+                        second.unit_id === transaction.unit_id
+                    ) -
+                    Number(
+                      first.resident_id === transaction.resident_id &&
+                        first.unit_id === transaction.unit_id
+                    )
+                )
                 .map((charge) => (
                   <option key={charge.id} value={charge.id}>
                     {charge.name} · {charge.unit_label} · {charge.description} ·{' '}
@@ -663,6 +746,14 @@ function PaymentDialog({
               onChange={(event) => form.setData('amount', event.target.value)}
             />
           </label>
+          <label className="finance-remember">
+            <input
+              type="checkbox"
+              checked={form.data.remember}
+              onChange={(event) => form.setData('remember', event.target.checked)}
+            />
+            Memorizar nome do residente
+          </label>
           <div className="form-actions">
             <button type="button" className="button secondary" onClick={onClose}>
               Fechar
@@ -678,5 +769,67 @@ function PaymentDialog({
         </form>
       )}
     </Modal>
+  )
+}
+
+function ResidentIdentity({
+  transaction,
+  accounts,
+}: {
+  transaction: BankTransaction
+  accounts: Account[]
+}) {
+  const form = useForm({
+    residentId: transaction.resident_id,
+    unitId: transaction.unit_id,
+    remember: true,
+  })
+  return (
+    <form
+      className="finance-identity"
+      onSubmit={(event) => {
+        event.preventDefault()
+        form.post(`/finances/transactions/${transaction.id}/resident`, { preserveScroll: true })
+      }}
+    >
+      <label>
+        Residente / fração
+        <select
+          value={form.data.residentId ? `${form.data.residentId}:${form.data.unitId}` : ''}
+          onChange={(event) => {
+            const account = accounts.find(
+              (item) => `${item.resident_id}:${item.unit_id}` === event.target.value
+            )
+            form.setData({
+              ...form.data,
+              residentId: account?.resident_id || null,
+              unitId: account?.unit_id || null,
+            })
+          }}
+        >
+          <option value="">Sem identificação</option>
+          {accounts.map((account) => (
+            <option
+              key={`${account.resident_id}:${account.unit_id}`}
+              value={`${account.resident_id}:${account.unit_id}`}
+            >
+              {account.name} · {account.unit_label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="finance-remember">
+        <input
+          type="checkbox"
+          checked={form.data.remember}
+          onChange={(event) => form.setData('remember', event.target.checked)}
+        />
+        Memorizar nome
+      </label>
+      <button className="button secondary" disabled={form.processing}>
+        <UserRoundCheck size={16} />
+        {form.processing ? 'A guardar...' : 'Guardar residente'}
+      </button>
+    </form>
   )
 }

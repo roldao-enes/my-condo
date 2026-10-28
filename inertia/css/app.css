@@ -1151,6 +1151,104 @@ label select {
   margin-top: 5px;
   color: var(--muted);
 }
+.finance-tag-actions {
+  display: flex;
+  gap: 5px;
+}
+.finance-tag-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  color: var(--green);
+  margin-top: 6px;
+  font-size: 10px;
+}
+.finance-tag-label svg {
+  flex-shrink: 0;
+}
+.finance-resident-name {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 7px;
+  color: var(--green);
+}
+.finance-remember {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 10px;
+  font-weight: 400;
+  margin: 8px 0 0;
+}
+.finance-remember input {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  margin: 0;
+  accent-color: var(--green);
+}
+.finance-identity {
+  padding-bottom: 20px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.finance-identity > .button {
+  margin-top: 12px;
+}
+dialog:has(.finance-report) {
+  width: 860px;
+  max-width: min(860px, calc(100vw - 28px));
+}
+.finance-report-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 16px;
+}
+.finance-report-heading h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.finance-report-heading p {
+  font-size: 12px;
+  color: var(--muted);
+}
+.finance-report-heading .button {
+  flex-shrink: 0;
+}
+.finance-report-section {
+  margin-top: 24px;
+}
+.finance-report-section h3 {
+  margin: 0 0 12px;
+}
+.finance-report-section table {
+  min-width: 420px;
+}
+.finance-report-section table.finance-report-totals {
+  min-width: 0;
+  table-layout: fixed;
+}
+.finance-report-totals th:last-child,
+.finance-report-totals td:last-child {
+  width: 40%;
+  text-align: right;
+}
+.finance-report-section td {
+  padding: 12px;
+}
+.finance-report-section th {
+  padding: 12px;
+}
+.finance-report-section td:last-child {
+  white-space: nowrap;
+}
+.finance-copy-notice {
+  margin-top: 16px;
+}
 @media (max-width: 1100px) {
   .finance-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));

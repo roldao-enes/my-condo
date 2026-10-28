@@ -18,11 +18,30 @@ const paymentValidator = vine.compile(
   vine.object({
     chargeId: vine.number().positive().withoutDecimals(),
     amount: vine.string().trim(),
+    remember: vine.boolean().optional(),
   })
 )
 const categoryValidator = vine.compile(
   vine.object({
     category: vine.enum(['unclassified', 'recurring', 'extraordinary']),
+    remember: vine.boolean().optional(),
+  })
+)
+const tagValidator = vine.compile(
+  vine.object({
+    name: vine.string().trim().minLength(1).maxLength(160),
+    pattern: vine.string().trim().minLength(3).maxLength(500),
+    matchType: vine.enum(['exact', 'contains']),
+    category: vine.enum(['recurring', 'extraordinary', 'resident_payment']),
+    residentId: vine.number().positive().withoutDecimals().nullable().optional(),
+    unitId: vine.number().positive().withoutDecimals().nullable().optional(),
+  })
+)
+const identityValidator = vine.compile(
+  vine.object({
+    residentId: vine.number().positive().withoutDecimals().nullable(),
+    unitId: vine.number().positive().withoutDecimals().nullable(),
+    remember: vine.boolean().optional(),
   })
 )
 
@@ -31,6 +50,13 @@ async function mutate(ctx: HttpContext, action: () => Promise<string>) {
     ctx.session.flash('success', await action())
   } catch (error) {
     const failure = error as { status?: number; code?: string; message: string }
+    if (failure.code === '23505') {
+      ctx.session.flash(
+        'error',
+        'Ja existe uma etiqueta com este nome de correspondencia e direcao.'
+      )
+      return ctx.response.redirect('/finances')
+    }
     if (failure.status && failure.status >= 500) throw error
     if (failure.code && failure.code !== 'E_VALIDATION_ERROR') throw error
     if (!(error instanceof Error)) throw error
@@ -73,7 +99,12 @@ export default class FinancesController {
   async classify(ctx: HttpContext) {
     return mutate(ctx, async () => {
       const input = await categoryValidator.validate(ctx.request.all())
-      await new FinanceService().classify(ctx.auth.user!.id, id(ctx.params.id), input.category)
+      await new FinanceService().classify(
+        ctx.auth.user!.id,
+        id(ctx.params.id),
+        input.category,
+        input.remember !== false
+      )
       return 'Classificacao atualizada.'
     })
   }
@@ -96,7 +127,8 @@ export default class FinancesController {
         ctx.auth.user!.id,
         id(ctx.params.id),
         input.chargeId,
-        parseMoney(input.amount)
+        parseMoney(input.amount),
+        input.remember !== false
       )
       return 'Pagamento associado.'
     })
@@ -106,6 +138,39 @@ export default class FinancesController {
     return mutate(ctx, async () => {
       await new FinanceService().unallocate(ctx.auth.user!.id, id(ctx.params.id))
       return 'Associacao removida.'
+    })
+  }
+
+  async identify(ctx: HttpContext) {
+    return mutate(ctx, async () => {
+      const input = await identityValidator.validate(ctx.request.all())
+      await new FinanceService().identify(
+        ctx.auth.user!.id,
+        id(ctx.params.id),
+        input.residentId,
+        input.unitId,
+        input.remember !== false
+      )
+      return 'Identificacao do residente atualizada.'
+    })
+  }
+
+  async saveTag(ctx: HttpContext) {
+    return mutate(ctx, async () => {
+      const input = await tagValidator.validate(ctx.request.all())
+      await new FinanceService().saveTag(
+        ctx.auth.user!.id,
+        input,
+        ctx.params.id ? id(ctx.params.id) : undefined
+      )
+      return 'Etiqueta guardada.'
+    })
+  }
+
+  async deleteTag(ctx: HttpContext) {
+    return mutate(ctx, async () => {
+      await new FinanceService().deleteTag(ctx.auth.user!.id, id(ctx.params.id))
+      return 'Etiqueta removida. Os movimentos anteriores foram preservados.'
     })
   }
 }

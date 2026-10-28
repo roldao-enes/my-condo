@@ -104,6 +104,98 @@ test.group('Condominium finances', (group) => {
     })
   })
 
+  test('learns expense names once and applies saved tags only to new imports', async ({
+    assert,
+  }) => {
+    const user = await User.create({
+      email: 'finance@example.test',
+      password: 'test-password-only',
+    })
+    const service = new FinanceService()
+    const original = '2025-01-03\t2025-01-03\tBank fee\t-7,50\t4922,11'
+    await service.importStatement(user.id, original)
+    const transaction = await db.from('finance_transactions').first()
+    await service.classify(user.id, transaction.id, 'recurring')
+    let data = await service.list()
+    assert.lengthOf(data.tags, 1)
+    await service.importStatement(
+      user.id,
+      `${original}\n2025-02-03\t2025-02-03\tBANK FEE\t-8,50\t4913,61`
+    )
+    data = await service.list()
+    assert.equal(data.transactions[0].category, 'recurring')
+    assert.equal(data.transactions[0].tag_id, data.tags[0].id)
+    await service.saveTag(
+      user.id,
+      {
+        name: 'Bank charges',
+        pattern: 'Bank fee',
+        matchType: 'contains',
+        category: 'extraordinary',
+      },
+      data.tags[0].id
+    )
+    await service.importStatement(user.id, '2025-03-03\t2025-03-03\tBank fee REF 123\t-9\t4904,61')
+    data = await service.list()
+    assert.equal(data.transactions[0].category, 'extraordinary')
+    assert.equal(data.transactions[1].category, 'recurring')
+    await service.deleteTag(user.id, data.tags[0].id)
+    await service.importStatement(user.id, '2025-04-03\t2025-04-03\tBank fee REF 456\t-9\t4895,61')
+    data = await service.list()
+    assert.equal(data.transactions[0].category, 'unclassified')
+    assert.equal(data.transactions[1].category, 'extraordinary')
+  })
+
+  test('remembers resident payment names without automatically settling future quotas', async ({
+    assert,
+  }) => {
+    const user = await User.create({
+      email: 'finance@example.test',
+      password: 'test-password-only',
+    })
+    const residency = new ResidencyService()
+    const unitId = await residency.createUnit(user.id, { label: '1A', floor: '1' })
+    await residency.onboard(user.id, {
+      unitId,
+      name: 'Resident',
+      role: 'owner',
+      startDate: '2025-01-01',
+    })
+    const resident = await db.from('residents').first()
+    const service = new FinanceService()
+    const chargeId = await service.createCharge(user.id, {
+      residentId: resident.id,
+      unitId,
+      description: 'Quota',
+      dueDate: '2025-01-31',
+      amount: 20000,
+    })
+    await service.importStatement(user.id, '2025-01-03\t2025-01-03\tTR Resident\t100\t5000')
+    const transaction = await db.from('finance_transactions').first()
+    await service.allocate(user.id, transaction.id, chargeId, 10000)
+    await service.importStatement(user.id, '2025-02-03\t2025-02-03\tTR RESIDENT\t90\t5090')
+    let data = await service.list()
+    assert.equal(data.transactions[0].resident_id, resident.id)
+    assert.equal(data.transactions[0].unit_id, unitId)
+    assert.equal(data.transactions[0].resident_name, 'Resident')
+    assert.lengthOf(data.payments, 1)
+    await service.identify(user.id, data.transactions[0].id, null, null)
+    data = await service.list()
+    assert.isNull(data.transactions[0].resident_id)
+    assert.lengthOf(data.tags, 1)
+    await assert.rejects(() =>
+      service.saveTag(user.id, {
+        name: 'Wrong account',
+        pattern: 'Wrong payer',
+        matchType: 'exact',
+        category: 'resident_payment',
+        residentId: resident.id,
+        unitId: 999999,
+      })
+    )
+    assert.lengthOf(await db.from('finance_tags'), 1)
+  })
+
   test('protects finance pages and mutations with authentication and CSRF', async ({
     client,
     assert,
@@ -118,6 +210,71 @@ test.group('Condominium finances', (group) => {
     const denied = await client.post('/finances/charges').loginAs(user).form({}).redirects(0)
     denied.assertStatus(302)
     assert.lengthOf(await db.from('finance_charges'), 0)
+  })
+
+  test('supports opt-out and protects tag registry HTTP mutations', async ({ client, assert }) => {
+    const user = await User.create({
+      email: 'finance@example.test',
+      password: 'test-password-only',
+    })
+    const service = new FinanceService()
+    await service.importStatement(user.id, '2025-01-03\t2025-01-03\tBank fee\t-7,50\t4922,11')
+    const transaction = await db.from('finance_transactions').first()
+    const classified = await client
+      .post(`/finances/transactions/${transaction.id}/category`)
+      .loginAs(user)
+      .withCsrfToken()
+      .form({ category: 'recurring', remember: false })
+      .redirects(0)
+    classified.assertFlashMessage('success', 'Classificacao atualizada.')
+    assert.lengthOf(await db.from('finance_tags'), 0)
+    const input = {
+      name: 'Bank charges',
+      pattern: 'Bank fee',
+      matchType: 'contains',
+      category: 'recurring',
+    }
+    const anonymous = await client.post('/finances/tags').withCsrfToken().form(input).redirects(0)
+    anonymous.assertStatus(302)
+    anonymous.assertHeader('location', '/login')
+    const denied = await client.post('/finances/tags').loginAs(user).form(input).redirects(0)
+    denied.assertStatus(302)
+    assert.lengthOf(await db.from('finance_tags'), 0)
+    const created = await client
+      .post('/finances/tags')
+      .loginAs(user)
+      .withCsrfToken()
+      .form(input)
+      .redirects(0)
+    created.assertFlashMessage('success', 'Etiqueta guardada.')
+    const tag = await db.from('finance_tags').first()
+    const updated = await client
+      .post(`/finances/tags/${tag.id}`)
+      .loginAs(user)
+      .withCsrfToken()
+      .form({ ...input, category: 'extraordinary' })
+      .redirects(0)
+    updated.assertFlashMessage('success', 'Etiqueta guardada.')
+    const invalid = await client
+      .post('/finances/tags')
+      .loginAs(user)
+      .withCsrfToken()
+      .form({ ...input, pattern: 'Invalid payer', category: 'resident_payment' })
+      .redirects(0)
+    invalid.assertFlashMessage('error', 'O residente nao tem relacao com esta fracao.')
+    assert.lengthOf(await db.from('finance_tags'), 1)
+    const removed = await client
+      .post(`/finances/tags/${tag.id}/remove`)
+      .loginAs(user)
+      .withCsrfToken()
+      .form({})
+      .redirects(0)
+    removed.assertFlashMessage(
+      'success',
+      'Etiqueta removida. Os movimentos anteriores foram preservados.'
+    )
+    assert.lengthOf(await db.from('finance_tags'), 0)
+    assert.exists(await db.from('audit_events').where('action', 'finance.tag_deleted').first())
   })
 
   test('uploads CSV through HTTP and rejects a malformed statement without partial writes', async ({
