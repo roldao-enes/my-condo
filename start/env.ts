@@ -20,6 +20,14 @@ export default await Env.create(new URL('../', import.meta.url), {
 
   /*
   |----------------------------------------------------------
+  | Audit log files (size-rotated, named by date range)
+  |----------------------------------------------------------
+  */
+  AUDIT_LOG_DIR: Env.schema.string.optional(),
+  AUDIT_LOG_MAX_BYTES: Env.schema.number.optional(),
+
+  /*
+  |----------------------------------------------------------
   | Variables for configuring session package
   |----------------------------------------------------------
   */

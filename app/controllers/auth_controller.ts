@@ -1,6 +1,7 @@
 import type { HttpContext } from '@adonisjs/core/http'
 import vine from '@vinejs/vine'
 import User from '#models/user'
+import { auditRequest, quote } from '../audit/audit.js'
 
 const loginValidator = vine.compile(
   vine.object({
@@ -14,26 +15,45 @@ export default class AuthController {
     return inertia.render('auth/login')
   }
 
-  async store({ request, auth, response, session }: HttpContext) {
+  async store(ctx: HttpContext) {
+    const { request, auth, response, session } = ctx
+    const trail = auditRequest(ctx, 'auth.login')
     const [error, input] = await loginValidator.tryValidate(request.all())
     if (error) {
+      await trail.failed('log in', error)
       session.flash('errors', { email: 'Verifique o email e a palavra-passe.' })
       return response.redirect('/login')
     }
+    const intent = `log in as ${quote(input.email, 254)}`
     let user: User
     try {
       user = await User.verifyCredentials(input.email, input.password)
     } catch (failure) {
-      if ((failure as { code?: string }).code !== 'E_INVALID_CREDENTIALS') throw failure
+      const unexpected = (failure as { code?: string }).code !== 'E_INVALID_CREDENTIALS'
+      await trail.failed(intent, failure, { unexpected })
+      if (unexpected) throw failure
       session.flash('errors', { email: 'Email ou palavra-passe incorretos.' })
       return response.redirect('/login')
     }
-    await auth.use('web').login(user)
+    try {
+      await auth.use('web').login(user)
+    } catch (failure) {
+      await trail.failed(intent, failure, { unexpected: true })
+      throw failure
+    }
+    await trail.succeeded('logged in', { actor: user })
     return response.redirect('/')
   }
 
-  async destroy({ auth, response }: HttpContext) {
-    await auth.use('web').logout()
-    return response.redirect('/login')
+  async destroy(ctx: HttpContext) {
+    const trail = auditRequest(ctx, 'auth.logout')
+    try {
+      await ctx.auth.use('web').logout()
+    } catch (failure) {
+      await trail.failed('log out', failure, { unexpected: true })
+      throw failure
+    }
+    await trail.succeeded('logged out')
+    return ctx.response.redirect('/login')
   }
 }
