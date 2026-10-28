@@ -1,0 +1,16 @@
+node_modules
+build
+.git
+.env
+.env.*
+.local
+tmp
+public/assets
+*.dump
+coverage
+.github
+.memories
+deploy
+docs
+README.md
+compose*.yaml

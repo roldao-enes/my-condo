@@ -1,0 +1,50 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: my-condo-migrate
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 86400
+  template:
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migration
+          image: my-condo:replace-before-deploying
+          command: [node, ace, migration:run, --force]
+          envFrom:
+            - secretRef:
+                name: my-condo
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: '1'
+              memory: 512Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - name: temporary
+              mountPath: /tmp
+            - name: application-temporary
+              mountPath: /app/tmp
+      volumes:
+        - name: temporary
+          emptyDir:
+            sizeLimit: 32Mi
+        - name: application-temporary
+          emptyDir:
+            sizeLimit: 32Mi

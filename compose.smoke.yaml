@@ -1,0 +1,56 @@
+x-application: &application
+  image: my-condo:smoke
+  environment:
+    APP_KEY: container-smoke-key-not-for-production
+    DB_HOST: database
+    DB_USER: condo
+    DB_PASSWORD: container-smoke-only
+    DB_DATABASE: my_condo
+    DB_SSL_MODE: disable
+  read_only: true
+  cap_drop: [ALL]
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp
+    - /app/tmp:uid=1000,gid=1000,mode=0700
+
+services:
+  database:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: condo
+      POSTGRES_PASSWORD: container-smoke-only
+      POSTGRES_DB: my_condo
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U condo -d my_condo]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  migrate:
+    <<: *application
+    command: [node, ace, migration:run, --force]
+    healthcheck:
+      disable: true
+    depends_on:
+      database:
+        condition: service_healthy
+
+  app:
+    <<: *application
+    ports:
+      - '127.0.0.1:18080:8080'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:8080/health/ready',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 3s
+      timeout: 5s
+      retries: 20
+      start_period: 10s

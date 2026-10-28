@@ -1,0 +1,52 @@
+{
+  "family": "my-condo",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "REPLACE_WITH_EXECUTION_ROLE_ARN",
+  "runtimePlatform": { "cpuArchitecture": "X86_64", "operatingSystemFamily": "LINUX" },
+  "containerDefinitions": [
+    {
+      "name": "app",
+      "image": "REPLACE_WITH_IMAGE_DIGEST",
+      "essential": true,
+      "user": "1000:1000",
+      "portMappings": [{ "containerPort": 8080, "protocol": "tcp" }],
+      "environment": [
+        { "name": "DB_SSL_MODE", "value": "verify-full" },
+        { "name": "DB_POOL_MAX", "value": "5" }
+      ],
+      "secrets": [
+        { "name": "APP_KEY", "valueFrom": "REPLACE_WITH_SECRET_JSON_KEY_ARN" },
+        { "name": "DB_HOST", "valueFrom": "REPLACE_WITH_SECRET_JSON_KEY_ARN" },
+        { "name": "DB_USER", "valueFrom": "REPLACE_WITH_SECRET_JSON_KEY_ARN" },
+        { "name": "DB_PASSWORD", "valueFrom": "REPLACE_WITH_SECRET_JSON_KEY_ARN" },
+        { "name": "DB_DATABASE", "valueFrom": "REPLACE_WITH_SECRET_JSON_KEY_ARN" },
+        { "name": "DB_SSL_CA", "valueFrom": "REPLACE_WITH_SECRET_JSON_KEY_ARN" }
+      ],
+      "linuxParameters": { "initProcessEnabled": true },
+      "stopTimeout": 30,
+      "healthCheck": {
+        "command": [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:8080/health/live',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 30
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/my-condo",
+          "awslogs-region": "REPLACE_WITH_REGION",
+          "awslogs-stream-prefix": "app"
+        }
+      }
+    }
+  ]
+}
