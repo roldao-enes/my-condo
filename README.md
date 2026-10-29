@@ -217,7 +217,13 @@ The same production image serves HTTP on `PORT` (default 8080) and accepts confi
 through environment variables/secrets. It supports verified PostgreSQL TLS and separate
 `/health/live` and `/health/ready` probes. Run migrations as a release job, not on web startup.
 
-The Compose stack uses PostgreSQL, a non-root application container, a one-shot migration
+For the UpCloud VM with a separate managed PostgreSQL database, use the standalone
+`compose.cloud.yaml` and `.env.cloud.example`. Follow the
+[managed-database deployment steps](docs/deployment.md#upcloud-vm-with-managed-postgresql)
+to pull an image, run migrations, and start the app and HTTPS proxy. No PostgreSQL
+container runs on the VM in this configuration.
+
+The default `compose.yaml` stack uses local PostgreSQL, a non-root application container, a one-shot migration
 service, and Caddy for automatic HTTPS. Only ports 80/443 are published; PostgreSQL and
 the application are private to the container network. Docker Engine/Compose or a compatible
 FOSS container runtime can be used.
