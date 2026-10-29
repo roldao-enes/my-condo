@@ -1,0 +1,84 @@
+x-application: &application
+  image: ${APP_IMAGE:?Set APP_IMAGE to a published image digest}
+  environment:
+    NODE_ENV: production
+    TZ: UTC
+    PORT: 8080
+    HOST: 0.0.0.0
+    LOG_LEVEL: info
+    APP_KEY: ${APP_KEY:?Set a unique APP_KEY}
+    SESSION_DRIVER: cookie
+    LIMITER_STORE: database
+    DB_HOST: ${DB_HOST:?Set the managed PostgreSQL hostname}
+    DB_PORT: ${DB_PORT:-5432}
+    DB_USER: ${DB_USER:?Set the managed PostgreSQL user}
+    DB_PASSWORD: ${DB_PASSWORD:?Set the managed PostgreSQL password}
+    DB_DATABASE: ${DB_DATABASE:?Set the managed PostgreSQL database}
+    DB_SSL_MODE: verify-full
+    DB_SSL_CA: ${DB_SSL_CA:-}
+    DB_POOL_MAX: ${DB_POOL_MAX:-5}
+    TRUST_PROXY: uniquelocal
+  security_opt:
+    - no-new-privileges:true
+  read_only: true
+  cap_drop: [ALL]
+  tmpfs:
+    - /tmp
+    - /app/tmp:uid=1000,gid=1000,mode=0700
+  logging:
+    driver: json-file
+    options:
+      max-size: '10m'
+      max-file: '3'
+
+services:
+  migrate:
+    <<: *application
+    profiles: [tools]
+    command: [node, ace, migration:run, --force]
+    healthcheck:
+      disable: true
+
+  app:
+    <<: *application
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 30s
+    healthcheck:
+      test:
+        [
+          CMD,
+          node,
+          -e,
+          "fetch('http://127.0.0.1:'+process.env.PORT+'/health/ready',{signal:AbortSignal.timeout(4000)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN to your public hostname}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: '10m'
+        max-file: '3'
+
+volumes:
+  caddy_data:
+  caddy_config:

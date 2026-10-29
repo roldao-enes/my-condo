@@ -80,6 +80,64 @@ for private registries. No build arguments or CI variables should contain applic
 
 ## VM on Any Provider
 
+### UpCloud VM with Managed PostgreSQL
+
+For the full onboarding checklist, including database provisioning, access rules,
+credentials, and a container-to-database TLS check, see
+[UpCloud Onboarding](upcloud-onboarding.md).
+
+Use the standalone `compose.cloud.yaml` for the UpCloud VM plus managed PostgreSQL
+setup. Do not combine it with `compose.yaml`: the latter runs a database on the VM.
+The cloud stack has no database service or database volume and never builds images.
+The existing local-database and smoke stacks remain unchanged.
+
+Install Docker Engine and Compose, copy `compose.cloud.yaml` and `Caddyfile` to a
+stable directory on the VM, and prepare `.env.cloud` from `.env.cloud.example`.
+Set `APP_IMAGE` to the published `ghcr.io/roldao-enes/my-condo@sha256:...` digest.
+Supply a stable `APP_KEY`, domain, and managed database connection details, including
+the provider's actual port. Restrict the environment file to its owner (`chmod 600
+.env.cloud`). Authenticate Docker to GHCR with read-only package credentials if needed.
+
+Configure managed PostgreSQL to accept connections from the VM, preferably over private
+connectivity. TLS certificate verification is always enabled in this stack, even on a
+private network. Use the certificate's hostname for `DB_HOST`; set `DB_SSL_CA` to the
+provider CA PEM if needed (literal `\n` sequences are accepted). Do not disable TLS to
+work around a certificate error.
+
+From that directory, validate configuration without printing secrets, pull the image,
+then migrate and start the services. Stop if any command fails:
+
+```sh
+docker compose -f compose.cloud.yaml --env-file .env.cloud config --quiet &&
+docker compose -f compose.cloud.yaml --env-file .env.cloud --profile tools pull &&
+docker compose -f compose.cloud.yaml --env-file .env.cloud run --rm migrate &&
+docker compose -f compose.cloud.yaml --env-file .env.cloud up -d --wait --wait-timeout 180
+```
+
+Migrations are an explicit one-shot command, not part of app startup. The migration
+service uses the `tools` profile so a VM restart or normal `up` does not rerun it.
+Use the same sequence for each release after changing `APP_IMAGE` to the new digest;
+take a database backup first and serialize deployments. A failed migration leaves the
+old app running during an upgrade; use backward-compatible migrations. This single-VM
+setup does not promise zero-downtime deployments.
+
+On the first deployment, create the administrator interactively:
+
+```sh
+docker compose -f compose.cloud.yaml --env-file .env.cloud exec app node ace create:admin
+curl --fail https://condo.example.org/health/ready
+```
+
+Replace the example hostname with your domain and verify login. Point DNS at the VM
+and allow TCP 80/443 (optionally UDP 443 for HTTP/3); restrict SSH. Only Caddy publishes
+ports, and it retains certificates in named volumes. App and migration logs rotate on
+the VM; audit records are mirrored to stdout, but temporary audit files and rotated
+Docker logs are not durable backups. Configure off-VM log retention if required.
+Use managed database backups/PITR and test a restore to a separate database. The local
+database-container backup commands in the README do not apply to this stack.
+
+### VM with PostgreSQL on the Same Host
+
 Use the existing Compose stack on Compute Engine, EC2, Hetzner, or any Linux VM with
 Docker Engine/Compose. Set `.env.production` from `.env.production.example`.
 Choose a domain and stable secrets, then either build locally or set `APP_IMAGE` to
