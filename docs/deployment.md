@@ -94,9 +94,12 @@ The existing local-database and smoke stacks remain unchanged.
 Install Docker Engine and Compose, copy `compose.cloud.yaml` and `Caddyfile` to a
 stable directory on the VM, and prepare `.env.cloud` from `.env.cloud.example`.
 Set `APP_IMAGE` to the published `ghcr.io/roldao-enes/my-condo@sha256:...` digest.
-Supply a stable `APP_KEY`, domain, and managed database connection details, including
-the provider's actual port. Restrict the environment file to its owner (`chmod 600
-.env.cloud`). Authenticate Docker to GHCR with read-only package credentials if needed.
+Supply a stable `APP_KEY`, the VM's public IPv4 address as `APP_DOMAIN` prefixed
+with `http://` for temporary IP-based access, and managed database connection
+details, including the provider's actual port. This is unencrypted HTTP; register
+a domain and configure DNS before using the deployment for sensitive data or
+production. Restrict the environment file to its owner (`chmod 600 .env.cloud`).
+Authenticate Docker to GHCR with read-only package credentials if needed.
 
 Configure managed PostgreSQL to accept connections from the VM, preferably over private
 connectivity. TLS certificate verification is always enabled in this stack, even on a

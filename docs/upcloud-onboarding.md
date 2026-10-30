@@ -43,9 +43,9 @@ support, and CA certificates. Do not assume the managed service listens on 5432.
    on your own machine, not in Git or the container image.
 4. Record the VM's public IPv4 address. If using private database connectivity,
    attach the VM to the appropriate private network and record its private IP.
-5. Restrict SSH to trusted source addresses. Allow inbound TCP 80/443 for Caddy;
-   UDP 443 is optional for HTTP/3. Do not publish application port 8080 or open a
-   database port inbound on the app VM.
+5. Restrict SSH to trusted source addresses. For initial IP-based access, allow
+   inbound TCP 80. Do not publish application port 8080 or open a database port
+   inbound on the app VM. Add TCP 443 later when enabling HTTPS with a domain.
 
 ### 2.2 Create the Managed PostgreSQL Service
 
@@ -142,7 +142,7 @@ chmod 600 .env.cloud
 Edit it with a trusted editor:
 
 ```dotenv
-APP_DOMAIN=condo.example.org
+APP_DOMAIN=http://<vm-public-ip>
 APP_IMAGE=ghcr.io/roldao-enes/my-condo@sha256:<actual-release-digest>
 APP_KEY=<unique-stable-application-key>
 DB_HOST=<provider-endpoint-hostname>
@@ -158,6 +158,11 @@ DB_POOL_MAX=5
 Replace every placeholder. Generate `APP_KEY` with
 `node ace generate:key --show` in a trusted development checkout, then keep a secure
 copy outside the VM. Do not regenerate it on each deployment.
+
+For now, set `APP_DOMAIN` to `http://` followed by the VM's public IPv4 address
+(for example, `http://194.62.99.212`). This deliberately serves plain HTTP so
+you can access the app by IP before registering a domain. Do not use this
+temporary setup for sensitive data or production use.
 
 Compose environment files support quoting: single-quoted values avoid `$`
 interpolation in passwords. Follow Compose's escaping rules if a password itself
@@ -253,8 +258,9 @@ schema before applying any pending migrations. Keep the original backup off-VM.
 - [ ] Configure OS security updates and verify the host firewall and UpCloud
       firewall rules. Docker-published ports need particular attention; only
       Caddy should be public.
-- [ ] Point the domain's DNS A record to the VM. Add an AAAA record only if IPv6
-      is configured and reachable.
+- [ ] Defer domain registration and DNS setup until you're ready to enable HTTPS.
+      UpCloud does not sell domains or host configurable DNS zones; its reverse
+      DNS name is not a website domain.
 - [ ] Confirm `docker compose version` works and Docker starts on boot.
 - [ ] Complete the container-to-database connection check in step 2.6.
 
@@ -274,10 +280,27 @@ On first deployment only, create the administrator interactively:
 docker compose -f compose.cloud.yaml --env-file .env.cloud exec app node ace create:admin
 ```
 
-- [ ] Check `https://<your-domain>/health/ready` returns HTTP 200.
-- [ ] Verify a valid HTTPS certificate, administrator login, and representative
-      read/write flows. Do not seed demo data in production.
-- [ ] Confirm that only ports 80/443 and restricted SSH are reachable externally.
+- [ ] Check `http://<vm-public-ip>/health/ready` returns HTTP 200.
+- [ ] Verify administrator login and representative read/write flows. Do not
+      seed demo data in production.
+- [ ] Confirm that only port 80 and restricted SSH are reachable externally for
+      now. HTTP is unencrypted; do not use real or sensitive data.
+
+### Enable a Domain and HTTPS Later
+
+When you're ready to put the app into production, register a domain with a domain
+registrar. In the DNS provider for that domain, add an A record for the root
+domain pointing to the VM's public IPv4 address. Configure an AAAA record only
+if IPv6 is set up and reachable. Then:
+
+- Set `APP_DOMAIN` in `.env.cloud` to the domain name without `http://`, such as
+  `condo.example.org`.
+- Allow inbound TCP 443 in the VM and UpCloud firewalls (UDP 443 is optional for
+  HTTP/3).
+- Redeploy the proxy. Caddy will obtain and renew a publicly trusted HTTPS
+  certificate once the DNS record resolves to the VM.
+- Verify `https://<your-domain>/health/ready` returns HTTP 200 and the browser
+  shows a valid certificate before using the site for sensitive data.
 
 ## 5. Establish the Release Procedure
 

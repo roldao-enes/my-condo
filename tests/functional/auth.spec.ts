@@ -62,7 +62,7 @@ test.group('Administrator HTTP access', (group) => {
       .redirects(0)
     invalid.assertStatus(302)
     invalid.assertHeader('location', '/login')
-    invalid.assertFlashMessage('errors', { email: 'Email ou palavra-passe incorretos.' })
+    invalid.assertFlashMessage('errorsBag', { email: 'Email ou palavra-passe incorretos.' })
     const valid = await client
       .post('/login')
       .withCsrfToken()
@@ -70,5 +70,24 @@ test.group('Administrator HTTP access', (group) => {
       .redirects(0)
     valid.assertStatus(302)
     valid.assertHeader('location', '/')
+  })
+
+  test('login errors reach the page after redirecting', async ({ client, assert }) => {
+    await User.create({ email: 'admin@example.test', password: 'test-password-only' })
+    for (const { input, message } of [
+      {
+        input: { email: 'admin@example.test', password: 'incorrect' },
+        message: 'Email ou palavra-passe incorretos.',
+      },
+      {
+        input: { email: 'not-an-email', password: '' },
+        message: 'Verifique o email e a palavra-passe.',
+      },
+    ]) {
+      const response = await client.post('/login').withCsrfToken().form(input)
+      response.assertStatus(200)
+      assert.include(response.text(), message)
+      assert.notInclude(response.text(), 'test-password-only')
+    }
   })
 })

@@ -61,7 +61,7 @@ services:
     image: caddy:2-alpine
     restart: unless-stopped
     environment:
-      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN to your public hostname}
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN to your public address}
     ports:
       - '80:80'
       - '443:443'
