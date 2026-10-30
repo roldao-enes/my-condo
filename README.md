@@ -139,6 +139,12 @@ authentication, not a production configuration. With Homebrew PostgreSQL 15 inst
 /opt/homebrew/opt/postgresql@15/bin/postgres -D "$PWD/.local/postgres" -h 127.0.0.1 -p 55432 -k "$PWD/.local"
 ```
 
+For this cluster, set `DB_HOST=127.0.0.1` and `DB_PORT=55432` in `.env`, then
+restart the development server. Check `http://127.0.0.1:3333/health/ready`:
+it must return HTTP 200 before testing login. The login rate limiter also uses
+the database when `LIMITER_STORE=database`, so a connection failure can return
+HTTP 500 before credential verification runs.
+
 If your active Node is older than 24, a scoped runtime works without changing your global Node:
 
 ```sh

@@ -21,7 +21,7 @@ export default class AuthController {
     const [error, input] = await loginValidator.tryValidate(request.all())
     if (error) {
       await trail.failed('log in', error)
-      session.flash('errors', { email: 'Verifique o email e a palavra-passe.' })
+      session.flashErrors({ email: 'Verifique o email e a palavra-passe.' })
       return response.redirect('/login')
     }
     const intent = `log in as ${quote(input.email, 254)}`
@@ -32,7 +32,7 @@ export default class AuthController {
       const unexpected = (failure as { code?: string }).code !== 'E_INVALID_CREDENTIALS'
       await trail.failed(intent, failure, { unexpected })
       if (unexpected) throw failure
-      session.flash('errors', { email: 'Email ou palavra-passe incorretos.' })
+      session.flashErrors({ email: 'Email ou palavra-passe incorretos.' })
       return response.redirect('/login')
     }
     try {
