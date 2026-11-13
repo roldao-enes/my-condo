@@ -20,8 +20,10 @@ TypeScript throughout: AdonisJS v6, React, Inertia, and PostgreSQL.
 - Portuguese date formatting, a Europe/Lisbon default, and EUR as the planned accounting currency.
 - Bank statement upload, duplicate-safe imports, expense classification, and a finance dashboard.
 - Resident quotas, partial payment matching, overdue balances, and audited match reversals.
+- Email announcements to residents: drafts, a recipient snapshot taken when queued, and a
+  run-once sender (`node ace send:emails`) with retry history. See [Email](#email).
 
-Email announcements, invitations, MFA, and retention automation are not implemented yet.
+Email invitations, MFA, and retention automation are not implemented yet.
 The finance dashboard is a management aid, not a certified accounting or statutory-notice system.
 
 ### Finances
@@ -118,6 +120,27 @@ yarn dev
 
 Open http://127.0.0.1:3333. The administrator command securely prompts for a password
 of at least 12 characters. All provisioned users are administrators in this milestone.
+
+### Email
+
+Announcements are written in **Comunicados**. Queueing one takes a snapshot of the active
+residents that have an email address (optionally just one unit), so later changes do not alter
+who receives it. Nothing is sent by the web app itself: `node ace send:emails` sends whatever
+is due and exits, so it works from your PC today and as a scheduled job later. Jobs that are not
+sent yet simply wait in PostgreSQL until the next run. Failed sends are retried with backoff
+(5 min, 30 min, 3 h, 12 h) and then marked failed; each attempt is stored. Messages are plain text.
+
+Locally, the default `.env.example` points at [Mailpit](https://mailpit.axllent.org), a dev inbox
+that never delivers anything:
+
+```sh
+docker compose -f compose.dev.yaml up -d      # Mailpit inbox UI on http://127.0.0.1:8025
+node ace send:emails                           # --limit 50 by default, --dry-run to count
+```
+
+For real delivery set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE`, and
+`MAIL_FROM` for an SMTP relay (Brevo, Resend, SES). Do not send straight from a home connection.
+Test with a throwaway recipient first: queued mail goes to real residents' addresses.
 
 ### Optional Demo
 
@@ -281,8 +304,9 @@ The application itself remains private/unlicensed until its owner chooses a lice
 
 1. Extend finance tracking with charge corrections, recurring quota schedules, printable
    statements, and a full immutable ledger. No automatic transfer of old debt to a buyer.
-2. PostgreSQL-backed email jobs, SMTP configuration, recipient snapshots, retry history,
-   and announcement drafts. Offboarding excludes ended relationships from future mailings.
+2. Email invitations and automatic reminders (for example overdue quotas) on top of the
+   announcement queue, plus HTML templates. Offboarding already excludes ended relationships
+   from new mailings.
 3. Meeting notices and calendar invitations, including updates/cancellations and printable
    alternatives. Verify Portuguese statutory-notice rules and consent requirements before use.
 4. MFA, recovery procedures, configurable condominium/timezone settings, privacy/retention
