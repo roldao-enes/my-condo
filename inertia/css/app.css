@@ -516,6 +516,10 @@ main {
   background: #f1f3f2;
   color: #939b96;
 }
+.badge.red {
+  background: #fbeeee;
+  color: #a54545;
+}
 .activity-heading {
   margin-top: 33px;
 }

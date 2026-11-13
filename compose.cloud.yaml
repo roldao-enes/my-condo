@@ -18,6 +18,12 @@ x-application: &application
     DB_SSL_CA: ${DB_SSL_CA:-}
     DB_POOL_MAX: ${DB_POOL_MAX:-5}
     TRUST_PROXY: uniquelocal
+    SMTP_HOST: ${SMTP_HOST:-}
+    SMTP_PORT: ${SMTP_PORT:-587}
+    SMTP_SECURE: ${SMTP_SECURE:-false}
+    SMTP_USER: ${SMTP_USER:-}
+    SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+    MAIL_FROM: ${MAIL_FROM:-}
   security_opt:
     - no-new-privileges:true
   read_only: true
@@ -36,6 +42,13 @@ services:
     <<: *application
     profiles: [tools]
     command: [node, ace, migration:run, --force]
+    healthcheck:
+      disable: true
+
+  send-emails:
+    <<: *application
+    profiles: [tools]
+    command: [node, ace, send:emails]
     healthcheck:
       disable: true
 

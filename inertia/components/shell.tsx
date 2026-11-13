@@ -9,6 +9,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Wallet,
+  Mail,
 } from 'lucide-react'
 import type { PropsWithChildren } from 'react'
 import { initials, type Shared } from '../lib/types'
@@ -41,6 +42,7 @@ export default function Shell({ children, view }: PropsWithChildren<{ view: stri
     { id: 'units', href: '/units', label: 'Frações', icon: DoorOpen },
     { id: 'residents', href: '/residents', label: 'Residentes', icon: Users },
     { id: 'finances', href: '/finances', label: 'Finanças', icon: Wallet },
+    { id: 'announcements', href: '/announcements', label: 'Comunicados', icon: Mail },
   ]
   return (
     <div className="app-shell">
