@@ -1,0 +1,125 @@
+import { Theme } from "theme.slint";
+import { Backend } from "state.slint";
+import { LoginScreen, SetupScreen } from "auth.slint";
+import { Shell } from "shell.slint";
+import { SettingsPage, RestoreDialog } from "settings.slint";
+import { AnnouncementsPage, AnnouncementPage, NewAnnouncementDialog, QueueConfirmDialog } from "announcements.slint";
+import { FinancesPage, ChargeDialog, ClassifyDialog, PaymentDialog, TagDialog, TagRemoveDialog, ReportDialog } from "finances.slint";
+import { OverviewPage, UnitsPage, ResidentsPage, UnitDialog, OnboardDialog, OffboardDialog, DetailDialog } from "residency.slint";
+
+export { Backend, UnitRow, RelationRow, StatCard, ActivityRow, TxRow, AccountRow, ChargeRow, TagRow, BreakdownRow, MatchRow, TagDraft, ReportSection, AnnRow, JobRow } from "state.slint";
+
+export component AppWindow inherits Window {
+    title: "Meu Condomínio";
+    icon: @image-url("icons/building-2.svg");
+    preferred-width: 1180px;
+    preferred-height: 760px;
+    min-width: 1100px;
+    min-height: 600px;
+    background: Theme.page;
+
+    if Backend.screen == "login": LoginScreen {
+        width: parent.width;
+        height: parent.height;
+    }
+    if Backend.screen == "setup": SetupScreen {
+        width: parent.width;
+        height: parent.height;
+    }
+    if Backend.screen == "main": Shell {
+        width: parent.width;
+        height: parent.height;
+        Rectangle {
+            vertical-stretch: 1;
+            if Backend.page == "overview": OverviewPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if Backend.page == "units": UnitsPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if Backend.page == "residents": ResidentsPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if Backend.page == "finances": FinancesPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if Backend.page == "announcements": AnnouncementsPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if Backend.page == "announcement": AnnouncementPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if Backend.page == "settings": SettingsPage {
+                width: parent.width;
+                height: parent.height;
+            }
+        }
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "unit": UnitDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+    if Backend.screen == "main" && Backend.dialog == "onboard": OnboardDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+    if Backend.screen == "main" && Backend.dialog == "offboard": OffboardDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+    if Backend.screen == "main" && Backend.dialog == "detail": DetailDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "restore": RestoreDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "charge": ChargeDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "classify": ClassifyDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "payment": PaymentDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "tag": TagDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "tag-remove": TagRemoveDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "report": ReportDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "new-announcement": NewAnnouncementDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+    if Backend.screen == "main" && Backend.dialog == "queue-confirm": QueueConfirmDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+}

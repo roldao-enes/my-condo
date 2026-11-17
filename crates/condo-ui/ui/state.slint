@@ -1,0 +1,326 @@
+// The contract between the UI and the Rust controller. Rust fills the `in` properties and
+// handles the callbacks; Slint never touches the database.
+
+export struct UnitRow {
+    id: int,
+    label: string,
+    floor: string,
+    // "Maria Silva, Pedro Costa" or "".
+    people: string,
+    count: int,
+    // "3 residentes" / "Sem residentes".
+    summary: string,
+    // Up to three initials for the avatar stack.
+    avatars: [string],
+}
+
+export struct RelationRow {
+    id: int,
+    name: string,
+    initials: string,
+    // Email, phone, or "Sem contacto".
+    contact: string,
+    unit-label: string,
+    role: string,
+    start: string,
+    // "" while the relationship is active.
+    end: string,
+    active: bool,
+    email: string,
+    phone: string,
+}
+
+export struct StatCard {
+    label: string,
+    value: string,
+    caption: string,
+}
+
+export struct ActivityRow {
+    name: string,
+    text: string,
+    date: string,
+    departed: bool,
+}
+
+export struct TxRow {
+    id: int,
+    date: string,
+    value-date: string,
+    description: string,
+    // Name of the matching tag, or "".
+    tag: string,
+    amount: string,
+    negative: bool,
+    balance: string,
+    expense: bool,
+    // Expenses: classification. Income: who paid.
+    who: string,
+    // Income only: "12,00 € por associar" or "Associado".
+    action: string,
+}
+
+export struct AccountRow {
+    name: string,
+    unit: string,
+    outstanding: string,
+    overdue: string,
+    has-overdue: bool,
+}
+
+export struct ChargeRow {
+    name: string,
+    unit: string,
+    description: string,
+    due: string,
+    amount: string,
+    paid: string,
+    outstanding: string,
+    status: string,
+    // "green" | "rose" | "neutral"
+    tone: string,
+}
+
+export struct TagRow {
+    id: int,
+    name: string,
+    pattern: string,
+    matching: string,
+    category: string,
+    who: string,
+}
+
+export struct BreakdownRow {
+    label: string,
+    amount: string,
+    // 0 to 1
+    share: float,
+}
+
+export struct MatchRow {
+    id: int,
+    title: string,
+    detail: string,
+}
+
+export struct TagDraft {
+    // -1 while creating
+    id: int,
+    name: string,
+    pattern: string,
+    match-index: int,
+    category-index: int,
+    account-index: int,
+}
+
+export struct ReportSection {
+    title: string,
+    body: string,
+}
+
+export struct AnnRow {
+    id: int,
+    subject: string,
+    created: string,
+    status: string,
+    queued: bool,
+    delivered: string,
+}
+
+export struct JobRow {
+    id: int,
+    name: string,
+    email: string,
+    units: string,
+    status: string,
+    // "green" | "red" | "neutral"
+    tone: string,
+    attempts: int,
+    error: string,
+    sent: string,
+}
+
+export global Backend {
+    // --- Session and navigation ---------------------------------------------------------
+    // "login" | "setup" | "main"
+    in-out property <string> screen: "login";
+    // "overview" | "units" | "residents" | "finances" | "settings"
+    in-out property <string> page: "overview";
+    in property <string> user-name;
+    in property <string> user-initials;
+    // "" | "success" | "error"
+    in property <string> notice-kind;
+    in property <string> notice-text;
+    // Shown inside the open form/dialog (login, setup and dialogs).
+    in property <string> form-error;
+    in property <bool> busy;
+    // Rust bumps this to tell forms to clear sensitive fields (e.g. after a failed login).
+    in property <int> form-reset: 0;
+
+    callback login(string, string);
+    callback setup(string, string, string, string);
+    callback logout();
+    callback navigate(string);
+    callback dismiss-notice();
+
+    // --- Residency ------------------------------------------------------------------------
+    // Breadcrumb ("Visão geral") and heading ("Tudo em casa.") differ on the overview.
+    in property <string> page-label;
+    in property <string> page-title;
+    in property <string> page-subtitle;
+    in property <[StatCard]> stats;
+    in property <[UnitRow]> overview-units;
+    in property <[ActivityRow]> activity;
+    in property <[UnitRow]> units;
+    in property <int> total-units;
+    in property <string> units-count-text;
+    in property <[RelationRow]> relationships;
+    in property <string> relationships-count-text;
+    in property <int> active-count;
+    in property <int> history-count;
+    in property <bool> history: false;
+    in property <string> empty-title;
+    in property <string> empty-text;
+    // Choices for the pickers, in the same order as the ids Rust keeps.
+    in property <[string]> unit-options;
+    in property <[string]> resident-options;
+    in property <[string]> role-options;
+    in property <int> preselect-unit-index: -1;
+    in property <string> today-text;
+
+    // "announcement" (page): one announcement. Dialogs also: "new-announcement" | "queue-confirm"
+    // "" | "unit" | "onboard" | "offboard" | "detail" | "restore"
+    in-out property <string> dialog;
+    in property <int> detail-unit-id;
+    in property <string> detail-title;
+    in property <string> detail-floor;
+    in property <[RelationRow]> detail-rows;
+    in property <RelationRow> offboard-target;
+
+    // --- Settings -------------------------------------------------------------------------
+    in property <string> smtp-host;
+    in property <string> smtp-port;
+    in property <bool> smtp-secure;
+    in property <string> smtp-user;
+    in property <string> smtp-from;
+    // The saved password itself is never sent to the window.
+    in property <bool> smtp-has-password;
+    in property <bool> smtp-configured;
+    in property <string> data-dir;
+    in property <bool> can-load-demo;
+    // What the chosen backup contains, shown before restoring it.
+    in property <string> restore-summary;
+
+    // host, port, secure (implicit TLS), user, password, from
+    callback save-smtp(string, string, bool, string, string, string);
+    callback clear-smtp();
+    callback export-backup();
+    callback choose-restore();
+    callback confirm-restore();
+    callback load-demo();
+
+    // --- Finances -------------------------------------------------------------------------
+    // 0 movements, 1 expenses, 2 debt, 3 tags
+    in-out property <int> fin-view: 0;
+    in property <string> fin-subtitle;
+    in property <string> fin-last-statement;
+    in property <string> fin-search-hint;
+    in property <string> fin-empty-text;
+    in property <[string]> fin-months;
+    in property <[string]> fin-categories;
+    in property <[StatCard]> fin-tiles;
+    in property <[BreakdownRow]> fin-breakdown;
+    in property <[TxRow]> fin-tx;
+    in property <[AccountRow]> fin-accounts;
+    in property <[ChargeRow]> fin-charges;
+    in property <[TagRow]> fin-tags;
+    in property <bool> fin-can-charge;
+    callback fin-set-view(int);
+    callback fin-set-month(int);
+    callback fin-set-category(int);
+    callback import-statement();
+
+    // Pickers: index 0 is a prompt ("Selecionar residente").
+    in property <[string]> account-options;
+    in property <[string]> identity-options;
+    in property <[string]> expense-category-options;
+
+    // "charge" | "classify" | "payment" | "tag" | "tag-remove" | "report"
+    callback open-charge();
+    // resident/unit index, description, due date, amount
+    callback create-charge(int, string, string, string);
+
+    in property <TxRow> classify-target;
+    in property <int> classify-index;
+    callback open-classify(int);
+    // transaction id, category index, remember the name
+    callback classify(int, int, bool);
+
+    in property <TxRow> pay-target;
+    in property <string> pay-available;
+    in property <bool> pay-can-allocate;
+    // Bumped after each change so the form inside the open dialog starts over.
+    in property <int> pay-nonce;
+    in property <[MatchRow]> pay-matches;
+    in property <[string]> pay-charge-options;
+    in property <int> pay-identity-index;
+    in-out property <string> pay-amount;
+    callback open-payment(int);
+    callback pay-pick-charge(int);
+    // transaction id, charge index, amount, remember
+    callback allocate(int, int, string, bool);
+    callback unallocate(int);
+    // transaction id, account index, remember
+    callback identify(int, int, bool);
+
+    in property <TagDraft> tag-draft;
+    in property <string> tag-remove-name;
+    in property <int> tag-remove-id;
+    callback open-tag(int);
+    // id (-1 new), name, pattern, match index, category index, account index
+    callback save-tag(int, string, string, int, int, int);
+    callback open-tag-remove(int);
+    callback confirm-tag-remove(int);
+
+    in property <string> report-heading;
+    in property <string> report-scope;
+    in property <[ReportSection]> report-sections;
+    callback open-report();
+    callback copy-report();
+
+    // --- Announcements --------------------------------------------------------------------
+    in property <[AnnRow]> ann-rows;
+    in property <string> ann-subtitle;
+    // The open announcement.
+    in property <string> ann-subject;
+    in property <string> ann-body;
+    in property <string> ann-status;
+    in property <bool> ann-queued;
+    in property <string> ann-created;
+    in property <[JobRow]> ann-jobs;
+    in property <int> ann-waiting;
+    in property <[string]> ann-unit-options;
+    // True while emails are being delivered in the background.
+    in property <bool> ann-sending;
+    callback open-announcement(int);
+    callback open-new-announcement();
+    callback create-announcement(string, string);
+    // Index into `ann-unit-options`; asks for confirmation first.
+    callback ask-queue(int);
+    in property <string> queue-target-text;
+    callback confirm-queue();
+    callback send-now();
+
+    callback search(string);
+    callback set-history(bool);
+    callback open-unit-detail(int);
+    callback open-onboard(int);
+    callback open-offboard(int);
+    callback close-dialog();
+    // label, floor
+    callback create-unit(string, string);
+    // unit index, existing person?, resident index, name, email, phone, role index, entry date
+    callback onboard(int, bool, int, string, string, string, int, string);
+    // relationship id, exit date
+    callback offboard(int, string);
+}

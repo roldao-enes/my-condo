@@ -1,0 +1,429 @@
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Backend } from "state.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
+import { AppButton, TextField, TextArea, SelectField, Badge, Card, Modal, EmptyState, FormActions, InlineError, PageHeading } from "components.slint";
+import { Cell, HeadRow, RowLine } from "finances.slint";
+
+export component AnnouncementsPage inherits VerticalLayout {
+    spacing: 16px;
+    PageHeading {
+        eyebrow: "GESTÃO DO CONDOMÍNIO";
+        title: "Comunicados";
+        subtitle: Backend.ann-subtitle;
+        AppButton {
+            kind: "primary";
+            text: "Novo comunicado";
+            icon: Icons.plus;
+            clicked => {
+                Backend.open-new-announcement();
+            }
+        }
+    }
+
+    if Backend.ann-rows.length == 0: EmptyState {
+        icon: Icons.mail;
+        title: "Sem comunicados";
+        text: "Ainda não existem comunicados.";
+    }
+    if Backend.ann-rows.length > 0: Card {
+        vertical-stretch: 1;
+        VerticalLayout {
+            hr := HeadRow {
+                Cell {
+                    total: hr.width;
+                    h: hr.height;
+                    head: true;
+                    from: 0.0;
+                    span: 0.5;
+                    text: "Assunto";
+                }
+
+                Cell {
+                    total: hr.width;
+                    h: hr.height;
+                    head: true;
+                    from: 0.5;
+                    span: 0.2;
+                    text: "Criado";
+                }
+
+                Cell {
+                    total: hr.width;
+                    h: hr.height;
+                    head: true;
+                    from: 0.7;
+                    span: 0.14;
+                    text: "Estado";
+                }
+
+                Cell {
+                    total: hr.width;
+                    h: hr.height;
+                    head: true;
+                    from: 0.84;
+                    span: 0.16;
+                    text: "Enviados";
+                }
+            }
+
+            ListView {
+                vertical-stretch: 1;
+                for ann in Backend.ann-rows: row := RowLine {
+                    height: 54px;
+                    Cell {
+                        total: row.width;
+                        h: row.height;
+                        from: 0.0;
+                        span: 0.5;
+                        text: ann.subject;
+                        tone: Theme.green-text;
+                    }
+
+                    Cell {
+                        total: row.width;
+                        h: row.height;
+                        from: 0.5;
+                        span: 0.2;
+                        text: ann.created;
+                    }
+
+                    Rectangle {
+                        x: row.width * 0.7 + 16px;
+                        width: row.width * 0.14 - 24px;
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                alignment: start;
+                                Badge {
+                                    text: ann.status;
+                                    tone: ann.queued ? "green" : "neutral";
+                                }
+                            }
+                        }
+                    }
+
+                    Cell {
+                        total: row.width;
+                        h: row.height;
+                        from: 0.84;
+                        span: 0.16;
+                        text: ann.delivered;
+                    }
+
+                    // The whole row opens the announcement; its label is the subject.
+                    TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
+                        accessible-role: button;
+                        accessible-label: "Abrir comunicado: " + ann.subject;
+                        accessible-action-default => {
+                            Backend.open-announcement(ann.id);
+                        }
+                        clicked => {
+                            Backend.open-announcement(ann.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component AnnouncementPage inherits VerticalLayout {
+    spacing: 14px;
+    PageHeading {
+        eyebrow: "COMUNICADOS";
+        title: Backend.ann-subject;
+        subtitle: Backend.ann-status + " · criado em " + Backend.ann-created;
+        AppButton {
+            text: "Todos os comunicados";
+            clicked => {
+                Backend.navigate("announcements");
+            }
+        }
+
+        if Backend.ann-queued: AppButton {
+            kind: "primary";
+            text: Backend.ann-sending ? "A enviar..." : "Enviar agora";
+            icon: Icons.mail;
+            enabled: !Backend.ann-sending && Backend.ann-waiting > 0;
+            clicked => {
+                Backend.send-now();
+            }
+        }
+    }
+
+    Card {
+        height: min(message.preferred-height + 32px, 170px);
+        ScrollView {
+            content-height: message.preferred-height + 32px;
+            message := Text {
+                x: 16px;
+                y: 16px;
+                width: parent.width - 32px;
+                text: Backend.ann-body;
+                font-size: 15px;
+                color: Theme.text;
+                wrap: word-wrap;
+            }
+        }
+    }
+
+    if !Backend.ann-queued: Card {
+        height: 140px;
+        VerticalLayout {
+            padding: 20px;
+            spacing: 12px;
+            audience := SelectField {
+                label: "Destinatários";
+                placeholder-first: false;
+                model: Backend.ann-unit-options;
+            }
+
+            HorizontalLayout {
+                alignment: start;
+                AppButton {
+                    kind: "primary";
+                    text: "Colocar em fila";
+                    icon: Icons.mail;
+                    clicked => {
+                        Backend.ask-queue(audience.current-index);
+                    }
+                }
+            }
+        }
+    }
+
+    if Backend.ann-queued: VerticalLayout {
+        vertical-stretch: 1;
+        spacing: 8px;
+        HorizontalLayout {
+            spacing: 8px;
+            padding-left: 4px;
+            alignment: start;
+            Text {
+                text: "Destinatários";
+                font-size: 17px;
+                font-weight: 600;
+                color: Theme.text;
+            }
+
+            Text {
+                text: Backend.ann-jobs.length;
+                font-size: 14px;
+                color: Theme.muted;
+            }
+        }
+
+        Text {
+            text: "O envio é automático enquanto a aplicação estiver aberta. «Enviar agora» tenta de imediato.";
+            font-size: 13px;
+            color: Theme.muted;
+            wrap: word-wrap;
+        }
+
+        Card {
+            vertical-stretch: 1;
+            VerticalLayout {
+                jh := HeadRow {
+                    Cell {
+                        total: jh.width;
+                        h: jh.height;
+                        head: true;
+                        from: 0.0;
+                        span: 0.15;
+                        text: "Nome";
+                    }
+
+                    Cell {
+                        total: jh.width;
+                        h: jh.height;
+                        head: true;
+                        from: 0.15;
+                        span: 0.23;
+                        text: "Email";
+                    }
+
+                    Cell {
+                        total: jh.width;
+                        h: jh.height;
+                        head: true;
+                        from: 0.38;
+                        span: 0.12;
+                        text: "Frações";
+                    }
+
+                    Cell {
+                        total: jh.width;
+                        h: jh.height;
+                        head: true;
+                        from: 0.5;
+                        span: 0.18;
+                        text: "Estado";
+                    }
+
+                    Cell {
+                        total: jh.width;
+                        h: jh.height;
+                        head: true;
+                        right: true;
+                        from: 0.68;
+                        span: 0.12;
+                        text: "Tentativas";
+                    }
+
+                    Cell {
+                        total: jh.width;
+                        h: jh.height;
+                        head: true;
+                        from: 0.8;
+                        span: 0.2;
+                        text: "Enviado";
+                    }
+                }
+
+                ListView {
+                    vertical-stretch: 1;
+                    for job in Backend.ann-jobs: jr := RowLine {
+                        height: 56px;
+                        Cell {
+                            total: jr.width;
+                            h: jr.height;
+                            from: 0.0;
+                            span: 0.15;
+                            text: job.name;
+                        }
+
+                        Cell {
+                            total: jr.width;
+                            h: jr.height;
+                            from: 0.15;
+                            span: 0.23;
+                            text: job.email;
+                        }
+
+                        Cell {
+                            total: jr.width;
+                            h: jr.height;
+                            from: 0.38;
+                            span: 0.12;
+                            text: job.units;
+                        }
+
+                        Rectangle {
+                            x: jr.width * 0.5 + 16px;
+                            width: jr.width * 0.18 - 24px;
+                            VerticalLayout {
+                                alignment: center;
+                                spacing: 2px;
+                                HorizontalLayout {
+                                    alignment: start;
+                                    Badge {
+                                        text: job.status;
+                                        tone: job.tone;
+                                    }
+                                }
+
+                                if job.error != "": Text {
+                                    text: job.error;
+                                    font-size: 11px;
+                                    color: Theme.danger;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+
+                        Cell {
+                            total: jr.width;
+                            h: jr.height;
+                            right: true;
+                            from: 0.68;
+                            span: 0.12;
+                            text: job.attempts;
+                        }
+
+                        Cell {
+                            total: jr.width;
+                            h: jr.height;
+                            from: 0.8;
+                            span: 0.2;
+                            text: job.sent;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component NewAnnouncementDialog inherits Modal {
+    title: "Novo comunicado";
+    card-width: 560px;
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        subject.focus-field();
+    }
+
+    subject := TextField {
+        label: "Assunto";
+        placeholder: "Ex.: Corte de água na sexta-feira";
+        accepted => {
+            message.focus-field();
+        }
+    }
+
+    message := TextArea {
+        label: "Mensagem";
+        placeholder: "Escreva a mensagem para os residentes...";
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Criar rascunho";
+        submit => {
+            Backend.create-announcement(subject.text, message.text);
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component QueueConfirmDialog inherits Modal {
+    title: "Colocar em fila";
+    close => {
+        Backend.close-dialog();
+    }
+
+    Text {
+        text: Backend.queue-target-text;
+        font-size: 15px;
+        font-weight: 600;
+        color: Theme.text;
+        wrap: word-wrap;
+    }
+
+    Text {
+        text: "Os destinatários são fixados agora e a mensagem fica em fila para envio. Continuar?";
+        font-size: 14px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Colocar em fila";
+        submit => {
+            Backend.confirm-queue();
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}

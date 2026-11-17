@@ -1,0 +1,28 @@
+// Colours and metrics. Light values are the web app's palette; dark follows the OS setting.
+import { Palette } from "std-widgets.slint";
+
+export global Theme {
+    out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+
+    out property <color> page: dark ? #121614 : #f7f9f8;
+    out property <color> surface: dark ? #1a201d : #ffffff;
+    out property <color> surface-alt: dark ? #222a26 : #f1f5f3;
+    out property <color> border: dark ? #2f3a35 : #e3e8e5;
+    out property <color> text: dark ? #e8edea : #252b29;
+    out property <color> muted: dark ? #9aa6a0 : #6b756f;
+
+    out property <color> green: dark ? #3f9d7e : #17664f;
+    out property <color> green-hover: dark ? #4aae8d : #115440;
+    out property <color> green-soft: dark ? #1d3a30 : #e6f2ed;
+    out property <color> green-text: dark ? #7fd0b2 : #17664f;
+    out property <color> on-green: #ffffff;
+
+    out property <color> danger: dark ? #f19a96 : #b3261e;
+    out property <color> danger-soft: dark ? #3b2220 : #fdecea;
+    out property <color> success-soft: dark ? #1d3a30 : #e6f2ed;
+
+    out property <color> focus: dark ? #78b9a2 : #3f9d7e;
+    out property <color> scrim: #0000006b;
+
+    out property <length> radius: 7px;
+}
