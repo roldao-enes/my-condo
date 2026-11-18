@@ -44,13 +44,13 @@ pub fn create_unit(
         label,
         1,
         80,
-        "Preencha a designacao e o piso (max. 80 e 40 caracteres).",
+        "Preencha a designação e o piso (máx. 80 e 40 caracteres).",
     )?;
     let floor = text(
         floor,
         1,
         40,
-        "Preencha a designacao e o piso (max. 80 e 40 caracteres).",
+        "Preencha a designação e o piso (máx. 80 e 40 caracteres).",
     )?;
     let tx = write_tx(conn)?;
     tx.execute(
@@ -73,7 +73,7 @@ pub fn onboard(
 ) -> ServiceResult<i64> {
     if input.start_date > today {
         return Err(ServiceError::Rejected(
-            "A entrada nao pode ser futura.".into(),
+            "A entrada não pode ser futura.".into(),
         ));
     }
     // Validate and normalize new-resident fields before touching the database.
@@ -85,17 +85,17 @@ pub fn onboard(
                     "Indique o nome do residente.".into(),
                 ));
             }
-            let name = text(name, 1, 160, "O nome deve ter no maximo 160 caracteres.")?;
+            let name = text(name, 1, 160, "O nome deve ter no máximo 160 caracteres.")?;
             let email = match email.as_deref().map(str::trim).filter(|e| !e.is_empty()) {
                 Some(e) if e.chars().count() <= 254 && is_valid_email(e) => Some(e.to_owned()),
-                Some(_) => return Err(ServiceError::InvalidInput("Email invalido.".into())),
+                Some(_) => return Err(ServiceError::InvalidInput("Email inválido.".into())),
                 None => None,
             };
             let phone = match phone.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
                 Some(p) if p.chars().count() <= 40 => Some(p.to_owned()),
                 Some(_) => {
                     return Err(ServiceError::InvalidInput(
-                        "O telefone deve ter no maximo 40 caracteres.".into(),
+                        "O telefone deve ter no máximo 40 caracteres.".into(),
                     ))
                 }
                 None => None,
@@ -111,7 +111,7 @@ pub fn onboard(
         |row| row.get(0),
     )?;
     if !unit_exists {
-        return Err(ServiceError::NotFound("Fracao nao encontrada.".into()));
+        return Err(ServiceError::NotFound("Fração não encontrada.".into()));
     }
     let resident_id = match (&input.resident, new_resident) {
         (ResidentRef::Existing(id), _) => {
@@ -121,7 +121,7 @@ pub fn onboard(
                 |row| row.get(0),
             )?;
             if !exists {
-                return Err(ServiceError::NotFound("Residente nao encontrado.".into()));
+                return Err(ServiceError::NotFound("Residente não encontrado.".into()));
             }
             *id
         }
@@ -178,21 +178,21 @@ pub fn offboard(
         )
         .optional()?;
     let Some((start_date, current_end)) = relationship else {
-        return Err(ServiceError::NotFound("Relacao nao encontrada.".into()));
+        return Err(ServiceError::NotFound("Relação não encontrada.".into()));
     };
     if current_end.is_some() {
         return Err(ServiceError::Conflict(
-            "Esta relacao ja foi encerrada.".into(),
+            "Esta relação já foi encerrada.".into(),
         ));
     }
     if end_date < start_date {
         return Err(ServiceError::InvalidInput(
-            "A data de saida nao pode ser anterior a data de entrada.".into(),
+            "A data de saída não pode ser anterior à data de entrada.".into(),
         ));
     }
     if end_date > today {
         return Err(ServiceError::Rejected(
-            "A saida nao pode ser futura.".into(),
+            "A saída não pode ser futura.".into(),
         ));
     }
     tx.execute(

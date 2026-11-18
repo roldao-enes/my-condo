@@ -130,7 +130,7 @@ fn can_be_limited_to_one_unit_and_cannot_be_queued_twice() {
 
     let again = announcements::queue(&mut conn, actor, id, None);
     assert!(
-        matches!(&again, Err(ServiceError::Conflict(m)) if m.contains("ja foi colocado em fila")),
+        matches!(&again, Err(ServiceError::Conflict(m)) if m.contains("já foi colocado em fila")),
         "{again:?}"
     );
     assert_eq!(jobs(&conn, id).len(), 1);
@@ -142,7 +142,7 @@ fn refuses_to_queue_when_nobody_can_be_reached() {
     let id = announcements::create_draft(&mut conn, actor, "Nobody", "Body").unwrap();
     let result = announcements::queue(&mut conn, actor, id, None);
     assert!(
-        matches!(&result, Err(ServiceError::Rejected(m)) if m.contains("destinatarios")),
+        matches!(&result, Err(ServiceError::Rejected(m)) if m.contains("destinatários")),
         "{result:?}"
     );
     // Stays a draft, so it can be queued once someone has an email.

@@ -219,7 +219,7 @@ export component FinancesPage inherits VerticalLayout {
     HorizontalLayout {
         spacing: 12px;
         tabs := Tabs {
-            width: 330px;
+            width: 350px;
             labels: ["Movimentos", "Despesas", "Dívida", "Etiquetas"];
             current: Backend.fin-view;
             chose(index) => {
@@ -238,7 +238,7 @@ export component FinancesPage inherits VerticalLayout {
         }
 
         SelectField {
-            width: 165px;
+            width: 170px;
             label: "Período dos movimentos";
             hide-label: true;
             placeholder-first: false;
@@ -249,7 +249,7 @@ export component FinancesPage inherits VerticalLayout {
         }
 
         if Backend.fin-view == 0: SelectField {
-            width: 200px;
+            width: 240px;
             label: "Filtrar classificação";
             hide-label: true;
             placeholder-first: false;
@@ -260,7 +260,7 @@ export component FinancesPage inherits VerticalLayout {
         }
 
         if Backend.fin-view == 1: SelectField {
-            width: 200px;
+            width: 240px;
             label: "Filtrar classificação";
             hide-label: true;
             placeholder-first: false;
@@ -722,7 +722,7 @@ export component FinancesPage inherits VerticalLayout {
                         h: hr4.height;
                         head: true;
                         from: 0.0;
-                        span: 0.17;
+                        span: 0.19;
                         text: "Etiqueta";
                     }
 
@@ -739,8 +739,8 @@ export component FinancesPage inherits VerticalLayout {
                         total: hr4.width;
                         h: hr4.height;
                         head: true;
-                        from: 0.36;
-                        span: 0.17;
+                        from: 0.38;
+                        span: 0.16;
                         text: "Correspondência";
                     }
 
@@ -748,8 +748,8 @@ export component FinancesPage inherits VerticalLayout {
                         total: hr4.width;
                         h: hr4.height;
                         head: true;
-                        from: 0.53;
-                        span: 0.2;
+                        from: 0.54;
+                        span: 0.19;
                         text: "Classificação";
                     }
 
@@ -757,8 +757,8 @@ export component FinancesPage inherits VerticalLayout {
                         total: hr4.width;
                         h: hr4.height;
                         head: true;
-                        from: 0.72;
-                        span: 0.18;
+                        from: 0.73;
+                        span: 0.17;
                         text: "Residente / fração";
                     }
                 }
@@ -771,7 +771,7 @@ export component FinancesPage inherits VerticalLayout {
                             total: trow.width;
                             h: trow.height;
                             from: 0.0;
-                            span: 0.17;
+                            span: 0.19;
                             text: tag.name;
                         }
 
@@ -786,24 +786,24 @@ export component FinancesPage inherits VerticalLayout {
                         Cell {
                             total: trow.width;
                             h: trow.height;
-                            from: 0.36;
-                            span: 0.17;
+                            from: 0.38;
+                            span: 0.16;
                             text: tag.matching;
                         }
 
                         Cell {
                             total: trow.width;
                             h: trow.height;
-                            from: 0.53;
-                            span: 0.2;
+                            from: 0.54;
+                            span: 0.19;
                             text: tag.category;
                         }
 
                         Cell {
                             total: trow.width;
                             h: trow.height;
-                            from: 0.72;
-                            span: 0.18;
+                            from: 0.73;
+                            span: 0.17;
                             text: tag.who;
                         }
 

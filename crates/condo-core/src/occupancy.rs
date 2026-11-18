@@ -60,7 +60,7 @@ pub fn validate_occupancy_dates(
     start_date: &str,
     end_date: Option<&str>,
 ) -> Result<(), DomainError> {
-    let invalid = || DomainError::new("Introduza uma data valida.");
+    let invalid = || DomainError::new("Introduza uma data válida.");
     let start = parse_iso_date(start_date).ok_or_else(invalid)?;
     let end = match end_date.filter(|value| !value.is_empty()) {
         Some(value) => Some(parse_iso_date(value).ok_or_else(invalid)?),
@@ -68,7 +68,7 @@ pub fn validate_occupancy_dates(
     };
     if end.is_some_and(|end| end < start) {
         return Err(DomainError::new(
-            "A data de saida nao pode ser anterior a data de entrada.",
+            "A data de saída não pode ser anterior à data de entrada.",
         ));
     }
     Ok(())

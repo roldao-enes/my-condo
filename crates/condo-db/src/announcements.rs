@@ -67,11 +67,11 @@ pub fn queue(
         )
         .optional()?;
     match status.as_deref() {
-        None => return Err(ServiceError::NotFound("Comunicado nao encontrado.".into())),
+        None => return Err(ServiceError::NotFound("Comunicado não encontrado.".into())),
         Some("draft") => {}
         Some(_) => {
             return Err(ServiceError::Conflict(
-                "Este comunicado ja foi colocado em fila.".into(),
+                "Este comunicado já foi colocado em fila.".into(),
             ))
         }
     }
@@ -82,7 +82,7 @@ pub fn queue(
             |row| row.get(0),
         )?;
         if !exists {
-            return Err(ServiceError::NotFound("Fracao nao encontrada.".into()));
+            return Err(ServiceError::NotFound("Fração não encontrada.".into()));
         }
     }
 
@@ -111,7 +111,7 @@ pub fn queue(
     let recipients = build_recipients(&rows);
     if recipients.is_empty() {
         return Err(ServiceError::Rejected(
-            "Nao existem destinatarios com email para este comunicado.".into(),
+            "Não existem destinatários com email para este comunicado.".into(),
         ));
     }
 
@@ -232,7 +232,7 @@ pub fn show(conn: &Connection, announcement_id: i64) -> ServiceResult<Announceme
             },
         )
         .optional()?
-        .ok_or_else(|| ServiceError::NotFound("Comunicado nao encontrado.".into()))?;
+        .ok_or_else(|| ServiceError::NotFound("Comunicado não encontrado.".into()))?;
 
     let mut jobs: Vec<JobView> = conn
         .prepare(

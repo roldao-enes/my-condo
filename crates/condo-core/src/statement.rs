@@ -47,7 +47,7 @@ pub fn parse_money(value: &str) -> Result<i64, DomainError> {
         || !all_digits(fraction)
         || (digits.contains('.') && fraction.is_empty())
     {
-        return Err(DomainError::new("Montante invalido."));
+        return Err(DomainError::new("Montante inválido."));
     }
 
     // Reject early so the integer math below cannot overflow.
@@ -56,7 +56,7 @@ pub fn parse_money(value: &str) -> Result<i64, DomainError> {
     }
     let whole: i64 = whole
         .parse()
-        .map_err(|_| DomainError::new("Montante invalido."))?;
+        .map_err(|_| DomainError::new("Montante inválido."))?;
     let fraction: i64 = match fraction.len() {
         0 => 0,
         1 => fraction.parse::<i64>().unwrap_or(0) * 10,
@@ -95,9 +95,9 @@ fn parse_date(value: &str) -> Result<NaiveDate, DomainError> {
     } else if is_pt_date(value) {
         NaiveDate::parse_from_str(value, "%d/%m/%Y")
     } else {
-        return Err(DomainError::new("Data invalida."));
+        return Err(DomainError::new("Data inválida."));
     };
-    parsed.map_err(|_| DomainError::new("Data invalida."))
+    parsed.map_err(|_| DomainError::new("Data inválida."))
 }
 
 /// Tries tab, `;`, then `,`; the first delimiter yielding exactly 5 columns on every row wins.
@@ -142,11 +142,11 @@ pub fn parse_statement(content: &str) -> Result<Vec<StatementRow>, DomainError> 
     if !is_iso_date(&rows[0][0]) && !is_pt_date(&rows[0][0]) {
         let header = rows.remove(0);
         if !is_header_label(&header[0]) {
-            return Err(DomainError::new("Cabecalho invalido."));
+            return Err(DomainError::new("Cabeçalho inválido."));
         }
     }
     if rows.is_empty() {
-        return Err(DomainError::new("O ficheiro nao contem movimentos."));
+        return Err(DomainError::new("O ficheiro não contém movimentos."));
     }
 
     rows.iter()
@@ -160,12 +160,12 @@ pub fn parse_statement(content: &str) -> Result<Vec<StatementRow>, DomainError> 
 fn parse_row(row: &[String]) -> Result<StatementRow, DomainError> {
     if row.len() != 5 || row[2].is_empty() || row[2].chars().count() > MAX_DESCRIPTION_CHARS {
         return Err(DomainError::new(
-            "Esperadas 5 colunas: data, data valor, descricao, montante e saldo.",
+            "Esperadas 5 colunas: data, data valor, descrição, montante e saldo.",
         ));
     }
     let amount = parse_money(&row[3])?;
     if amount == 0 {
-        return Err(DomainError::new("O montante nao pode ser zero."));
+        return Err(DomainError::new("O montante não pode ser zero."));
     }
     Ok(StatementRow {
         date: parse_date(&row[0])?,

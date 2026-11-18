@@ -45,7 +45,7 @@ pub fn save(conn: &Connection, new: &SmtpSettings) -> ServiceResult<()> {
     let invalid = |m: &str| Err(ServiceError::InvalidInput(m.to_owned()));
     let host = new.host.trim();
     if host.is_empty() || host.chars().count() > 253 || host.contains(char::is_whitespace) {
-        return invalid("Indique o servidor SMTP (sem espacos).");
+        return invalid("Indique o servidor SMTP (sem espaços).");
     }
     if new.port == 0 {
         return invalid("Indique uma porta entre 1 e 65535.");
@@ -53,7 +53,7 @@ pub fn save(conn: &Connection, new: &SmtpSettings) -> ServiceResult<()> {
     let from = new.from.trim();
     if from.parse::<Mailbox>().is_err() {
         return invalid(
-            "Indique um remetente valido, por exemplo: Condominio <condominio@exemplo.pt>.",
+            "Indique um remetente válido, por exemplo: Condomínio <condominio@exemplo.pt>.",
         );
     }
     let user = new.user.as_deref().map(str::trim).filter(|u| !u.is_empty());

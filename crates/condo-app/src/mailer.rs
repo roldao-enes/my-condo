@@ -14,7 +14,7 @@ pub const MAX_PER_RUN: usize = 1000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MailerError {
-    #[error("O envio de emails nao esta configurado. Indique o servidor SMTP e o remetente nas definicoes.")]
+    #[error("O envio de emails não está configurado. Indique o servidor SMTP e o remetente em Definições.")]
     NotConfigured,
     #[error("{0}")]
     Transport(String),
@@ -235,7 +235,7 @@ mod tests {
         let (mut conn, trail, _dir, actor) = queued();
         let error = send_due(&mut conn, &trail, &actor, 50, later()).unwrap_err();
         assert!(matches!(error, MailerError::NotConfigured));
-        assert!(error.to_string().contains("nao esta configurado"));
+        assert!(error.to_string().contains("não está configurado"));
         assert_eq!(logged(&trail)[0].record.outcome, AuditOutcome::Failure);
         assert_eq!(count_due(&conn, later()).unwrap(), 1); // still waiting
     }

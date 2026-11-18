@@ -97,7 +97,7 @@ fn imports_atomically_skips_overlapping_rows_and_preserves_classifications() {
         user,
         &format!("{second}\n2025-02-30\t2025-01-01\tInvalid\t1\t1"),
     );
-    assert_eq!(bad.unwrap_err().to_string(), "Movimento 2: Data invalida.");
+    assert_eq!(bad.unwrap_err().to_string(), "Movimento 2: Data inválida.");
     assert_eq!(count(&conn, "finance_transactions"), 2);
     // Audit rows: import, classify (tag_saved + classified), import. The failed import adds none.
     assert_eq!(count(&conn, "audit_events"), 4);
@@ -507,7 +507,7 @@ fn supports_opt_out_and_the_tag_registry() {
         None,
     );
     assert!(
-        matches!(&invalid, Err(ServiceError::Rejected(m)) if m == "O residente nao tem relacao com esta fracao.")
+        matches!(&invalid, Err(ServiceError::Rejected(m)) if m == "O residente não tem relação com esta fração.")
     );
     let short = finance::save_tag(
         &mut conn,

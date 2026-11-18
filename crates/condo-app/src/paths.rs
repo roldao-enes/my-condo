@@ -21,7 +21,7 @@ pub struct AppPaths {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Nao foi possivel determinar a pasta de dados do utilizador. Defina {DATA_DIR_ENV}.")]
+#[error("Não foi possível determinar a pasta de dados do utilizador. Defina {DATA_DIR_ENV}.")]
 pub struct NoHomeDirectory;
 
 impl AppPaths {

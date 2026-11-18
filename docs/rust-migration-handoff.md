@@ -254,11 +254,15 @@ are behind `condo_ui::files::FileDialogs`; tests install a scripted one with
 
 ### 6.4 Cross-cutting polish
 
-* **Accents.** New UI strings are accented; service error messages (`condo-db`, `condo-core`) are still
-  the web app's unaccented ASCII ("Email invalido.", "Fracao nao encontrada."). Upgrade them in one pass
-  and update the tests that match on text.
-* **Font.** UI uses the system font. To match the web app, bundle **DM Sans as `.ttf`** (the web app only
-  has `woff2`, which Slint cannot load; it is OFL licensed) and register it in Slint.
+* **Accents: DONE.** Service and core error messages are now accented (`Fração não encontrada.`,
+  `Email inválido.`, ...); the tests that matched on text were updated. A scan of all non-test string
+  literals finds no unaccented Portuguese left. The audit log stays English on purpose. Unit labels
+  typed in tests ("1.o Esq.") are test data, not UI text.
+* **Font: DONE.** DM Sans static TTFs (Light 300, Regular 400, SemiBold 600, Bold 700, OFL) are in
+  `ui/fonts/` and embedded via `import "fonts/...ttf"` in `app.slint` with
+  `default-font-family: "DM Sans"`. It is wider than the system font, so the default window is now
+  1360x800 (min 1180) and the page heading's title/subtitle elide instead of squeezing the buttons.
+  Tests render at 1360x800. Italic/Medium weights are not bundled (not used).
 * **Dark mode, small windows, HiDPI, keyboard navigation (Tab order/focus rings), accessibility:**
   untested. The dropdown popup's interaction (opening, clicking an item) is also untested because tests
   set the index directly.

@@ -53,7 +53,7 @@ impl Harness {
         let controller =
             Controller::open(&paths, Rc::new(move || clock_source.get())).expect("open app");
         let ui = AppWindow::new().unwrap();
-        ui.window().set_size(slint::PhysicalSize::new(1180, 760));
+        ui.window().set_size(slint::PhysicalSize::new(1360, 800));
         let controller = condo_ui::controller::attach(&ui, controller);
         ui.show().unwrap();
         Self {
@@ -290,7 +290,7 @@ impl Harness {
     pub fn tall(&self) {
         self.ui
             .window()
-            .set_size(slint::PhysicalSize::new(1180, 1500));
+            .set_size(slint::PhysicalSize::new(1360, 1500));
     }
 }
 

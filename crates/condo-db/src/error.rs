@@ -20,7 +20,7 @@ pub enum ServiceError {
     #[error("{0}")]
     Conflict(String),
     /// A UNIQUE constraint rejected a duplicate; carries the constraint description.
-    #[error("Ja existe um registo com estes dados.")]
+    #[error("Já existe um registo com estes dados.")]
     Duplicate(Option<String>),
     #[error("Erro inesperado da base de dados: {0}")]
     Database(rusqlite::Error),
@@ -140,10 +140,10 @@ mod tests {
             )
         );
         assert_eq!(
-            case(ServiceError::NotFound("Fracao nao encontrada.".into())),
+            case(ServiceError::NotFound("Fração não encontrada.".into())),
             (
                 "not_found".into(),
-                "not found: Fracao nao encontrada.".into(),
+                "not found: Fração não encontrada.".into(),
                 Some(404)
             )
         );
@@ -157,11 +157,11 @@ mod tests {
         );
         assert_eq!(
             case(ServiceError::Rejected(
-                "A entrada nao pode ser futura.".into()
+                "A entrada não pode ser futura.".into()
             )),
             (
                 "rejected".into(),
-                "rejected by business rule: A entrada nao pode ser futura.".into(),
+                "rejected by business rule: A entrada não pode ser futura.".into(),
                 Some(422)
             )
         );

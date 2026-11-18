@@ -43,7 +43,7 @@ fn building_up_a_condominium_end_to_end() {
         "stays open so the person can correct it"
     );
     assert!(
-        h.error().starts_with("Preencha a designacao"),
+        h.error().starts_with("Preencha a designação"),
         "{}",
         h.error()
     );
@@ -115,7 +115,7 @@ fn building_up_a_condominium_end_to_end() {
     onboard(&h, 2, "Sem Data", "", 0, "ontem");
     assert_eq!(h.error(), "Introduza uma data válida (dd/mm/aaaa).");
     onboard(&h, 2, "Mau Email", "isto-nao-e-email", 0, "01/01/2025");
-    assert_eq!(h.error(), "Email invalido.");
+    assert_eq!(h.error(), "Email inválido.");
     onboard(&h, 2, "   ", "", 0, "01/01/2025");
     assert_eq!(h.error(), "Indique o nome do residente.");
     h.backend().invoke_close_dialog();

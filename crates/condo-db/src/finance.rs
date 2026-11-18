@@ -21,7 +21,7 @@ use crate::error::{text, ServiceError, ServiceResult};
 use crate::write_tx;
 
 pub const MAX_STATEMENT_BYTES: usize = 2 * 1024 * 1024;
-const NO_RELATIONSHIP: &str = "O residente nao tem relacao com esta fracao.";
+const NO_RELATIONSHIP: &str = "O residente não tem relação com esta fração.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImportSummary {
@@ -85,7 +85,7 @@ pub fn import_statement(
 ) -> ServiceResult<ImportSummary> {
     if content.len() > MAX_STATEMENT_BYTES {
         return Err(ServiceError::InvalidInput(
-            "Selecione um ficheiro CSV valido (max. 2 MB).".into(),
+            "Selecione um ficheiro CSV válido (máx. 2 MB).".into(),
         ));
     }
     let mut rows = parse_statement(content)?;
@@ -416,7 +416,7 @@ fn write_tag(
                 |row| row.get(0),
             )
             .optional()?
-            .ok_or_else(|| ServiceError::NotFound("Etiqueta nao encontrada.".into()))?,
+            .ok_or_else(|| ServiceError::NotFound("Etiqueta não encontrada.".into()))?,
         None => tx.query_row(
             "INSERT INTO finance_tags
                (name, pattern, match_type, direction, category, resident_id, unit_id, created_by)
@@ -480,7 +480,7 @@ pub fn delete_tag(conn: &mut Connection, actor_id: i64, id: i64) -> ServiceResul
         .optional()?
         .and_then(|raw| serde_json::from_str(&raw).ok());
     let Some(tag) = tag else {
-        return Err(ServiceError::NotFound("Etiqueta nao encontrada.".into()));
+        return Err(ServiceError::NotFound("Etiqueta não encontrada.".into()));
     };
     tx.execute("DELETE FROM finance_tags WHERE id = ?1", [id])?;
     audit_events::record(
@@ -513,7 +513,7 @@ pub fn classify(
         )
         .optional()?;
     let Some(description) = description else {
-        return Err(ServiceError::NotFound("Despesa nao encontrada.".into()));
+        return Err(ServiceError::NotFound("Despesa não encontrada.".into()));
     };
     let tag_category = match category {
         ExpenseCategory::Recurring => Some(TagCategory::Recurring),
@@ -573,11 +573,11 @@ pub fn create_charge(
         &input.description,
         1,
         200,
-        "A descricao da quota deve ter entre 1 e 200 caracteres.",
+        "A descrição da quota deve ter entre 1 e 200 caracteres.",
     )?;
     if input.amount <= 0 {
         return Err(ServiceError::InvalidInput(
-            "Indique um montante positivo e uma data valida.".into(),
+            "Indique um montante positivo e uma data válida.".into(),
         ));
     }
     let tx = write_tx(conn)?;
@@ -645,14 +645,14 @@ pub fn allocate(
         (movement, charge)
     else {
         return Err(ServiceError::NotFound(
-            "Movimento ou quota nao encontrado.".into(),
+            "Movimento ou quota não encontrado.".into(),
         ));
     };
     let available = movement_amount - paid_total(&tx, "transaction_id", transaction_id)?;
     let owed = charge_amount - paid_total(&tx, "charge_id", charge_id)?;
     if amount <= 0 || movement_amount <= 0 || amount > available || amount > owed {
         return Err(ServiceError::Rejected(
-            "O pagamento excede o valor disponivel ou o saldo da quota.".into(),
+            "O pagamento excede o valor disponível ou o saldo da quota.".into(),
         ));
     }
 
@@ -667,7 +667,7 @@ pub fn allocate(
         )?;
         if shared {
             return Err(ServiceError::Rejected(
-                "Pagamento partilhado: desative a opcao de memorizar o nome.".into(),
+                "Pagamento partilhado: desative a opção de memorizar o nome.".into(),
             ));
         }
         let tag_id = write_tag(
@@ -718,7 +718,7 @@ pub fn unallocate(conn: &mut Connection, actor_id: i64, payment_id: i64) -> Serv
         )
         .optional()?;
     let Some((transaction_id, charge_id, amount)) = payment else {
-        return Err(ServiceError::NotFound("Pagamento nao encontrado.".into()));
+        return Err(ServiceError::NotFound("Pagamento não encontrado.".into()));
     };
     tx.execute("DELETE FROM finance_payments WHERE id = ?1", [payment_id])?;
     audit_events::record(
@@ -753,7 +753,7 @@ pub fn identify(
         )
         .optional()?;
     let Some(description) = description else {
-        return Err(ServiceError::NotFound("Entrada nao encontrada.".into()));
+        return Err(ServiceError::NotFound("Entrada não encontrada.".into()));
     };
     if resident_id.is_some() || unit_id.is_some() {
         validate_account(&tx, resident_id, unit_id)?;

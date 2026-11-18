@@ -41,9 +41,9 @@ impl SmtpTransport {
         let from: Mailbox = settings
             .from
             .parse()
-            .map_err(|e| MailError(format!("Remetente invalido: {e}")))?;
+            .map_err(|e| MailError(format!("Remetente inválido: {e}")))?;
         let tls_parameters = TlsParameters::new(settings.host.clone())
-            .map_err(|e| MailError(format!("Configuracao TLS invalida: {e}")))?;
+            .map_err(|e| MailError(format!("Configuração TLS inválida: {e}")))?;
         let mut builder = lettre::SmtpTransport::builder_dangerous(&settings.host)
             .port(settings.port)
             .timeout(Some(Duration::from_secs(30)))
@@ -82,7 +82,7 @@ fn build_message(from: &Mailbox, email: &OutgoingEmail) -> Result<Message, MailE
     let address: Address = email
         .to_address
         .parse()
-        .map_err(|e| MailError(format!("Email do destinatario invalido: {e}")))?;
+        .map_err(|e| MailError(format!("Email do destinatário inválido: {e}")))?;
     let name = Some(single_line(&email.to_name)).filter(|n| !n.is_empty());
     Message::builder()
         .from(from.clone())
@@ -90,7 +90,7 @@ fn build_message(from: &Mailbox, email: &OutgoingEmail) -> Result<Message, MailE
         .subject(single_line(&email.subject))
         .header(ContentType::TEXT_PLAIN)
         .body(email.text.clone())
-        .map_err(|e| MailError(format!("Mensagem invalida: {e}")))
+        .map_err(|e| MailError(format!("Mensagem inválida: {e}")))
 }
 
 impl MailTransport for SmtpTransport {

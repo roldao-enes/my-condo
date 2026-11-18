@@ -20,12 +20,12 @@ pub fn insert(
     email: &str,
     password_hash: &str,
 ) -> ServiceResult<i64> {
-    let email = text(email, 3, 254, "Email invalido.")?.to_lowercase();
+    let email = text(email, 3, 254, "Email inválido.")?.to_lowercase();
     if !condo_core::recipients::is_valid_email(&email) {
-        return Err(ServiceError::InvalidInput("Email invalido.".to_owned()));
+        return Err(ServiceError::InvalidInput("Email inválido.".to_owned()));
     }
     let full_name = full_name
-        .map(|n| text(n, 1, 160, "Nome invalido."))
+        .map(|n| text(n, 1, 160, "Nome inválido."))
         .transpose()?;
     conn.execute(
         "INSERT INTO users (full_name, email, password) VALUES (?1, ?2, ?3)",

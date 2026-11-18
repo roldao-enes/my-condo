@@ -37,8 +37,8 @@ pub const SCHEMA_VERSION: usize = MIGRATIONS.len();
 #[derive(Debug, thiserror::Error)]
 pub enum DatabaseError {
     #[error(
-        "Esta base de dados foi criada por uma versao mais recente da aplicacao \
-         (esquema {found}, esta versao suporta ate {supported})."
+        "Esta base de dados foi criada por uma versão mais recente da aplicação \
+         (esquema {found}, esta versão suporta até {supported})."
     )]
     TooNew { found: usize, supported: usize },
     #[error(transparent)]

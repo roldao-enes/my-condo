@@ -14,15 +14,15 @@ use crate::residency::{self, Onboarding, ResidentRef};
 const ENTRIES: [(&str, &str, Option<&str>, ResidentRole); 6] = [
     ("R/C Esq.", "0", Some("Maria Silva"), ResidentRole::Owner),
     ("R/C Dir.", "0", Some("Pedro Costa"), ResidentRole::Tenant),
-    ("1.o Esq.", "1", Some("Sofia Almeida"), ResidentRole::Owner),
-    ("1.o Dir.", "1", Some("Miguel Santos"), ResidentRole::Owner),
+    ("1.º Esq.", "1", Some("Sofia Almeida"), ResidentRole::Owner),
+    ("1.º Dir.", "1", Some("Miguel Santos"), ResidentRole::Owner),
     (
-        "2.o Esq.",
+        "2.º Esq.",
         "2",
         Some("Beatriz Ferreira"),
         ResidentRole::Tenant,
     ),
-    ("2.o Dir.", "2", None, ResidentRole::Owner),
+    ("2.º Dir.", "2", None, ResidentRole::Owner),
 ];
 
 /// Loads the sample units and residents. Refuses unless the database has no units or residents,
@@ -35,7 +35,7 @@ pub fn load(conn: &mut Connection, actor_id: i64, today: NaiveDate) -> ServiceRe
     )?;
     if has_data {
         return Err(ServiceError::Conflict(
-            "Os dados de demonstracao so podem ser carregados numa base de dados vazia. \
+            "Os dados de demonstração só podem ser carregados numa base de dados vazia. \
              Nada foi alterado."
                 .into(),
         ));

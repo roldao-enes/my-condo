@@ -14,9 +14,9 @@ use condo_db::SCHEMA_VERSION;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BackupError {
-    #[error("O ficheiro nao e uma copia de seguranca valida: {0}")]
+    #[error("O ficheiro não é uma cópia de segurança válida: {0}")]
     Invalid(String),
-    #[error("Esta copia foi criada por uma versao mais recente da aplicacao (esquema {found}, esta versao suporta ate {supported}).")]
+    #[error("Esta cópia foi criada por uma versão mais recente da aplicação (esquema {found}, esta versão suporta até {supported}).")]
     TooNew { found: usize, supported: usize },
     #[error(transparent)]
     Sqlite(#[from] condo_db::rusqlite::Error),
@@ -69,20 +69,20 @@ pub fn export(conn: &Connection, destination: &Path) -> Result<BackupInfo, Backu
 pub fn validate(path: &Path) -> Result<BackupInfo, BackupError> {
     let invalid = |why: &str| BackupError::Invalid(why.to_owned());
     if !path.is_file() {
-        return Err(invalid("o ficheiro nao existe"));
+        return Err(invalid("o ficheiro não existe"));
     }
     let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
-        .map_err(|_| invalid("nao e uma base de dados SQLite"))?;
+        .map_err(|_| invalid("não é uma base de dados SQLite"))?;
     let check: String = conn
         .query_row("PRAGMA integrity_check", [], |row| row.get(0))
-        .map_err(|_| invalid("nao e uma base de dados SQLite"))?;
+        .map_err(|_| invalid("não é uma base de dados SQLite"))?;
     if check != "ok" {
-        return Err(invalid("a verificacao de integridade falhou"));
+        return Err(invalid("a verificação de integridade falhou"));
     }
     let version: i64 = conn.query_row("PRAGMA user_version", [], |row| row.get(0))?;
     let version = usize::try_from(version).unwrap_or(0);
     if version == 0 {
-        return Err(invalid("nao pertence a esta aplicacao"));
+        return Err(invalid("não pertence a esta aplicação"));
     }
     if version > SCHEMA_VERSION {
         return Err(BackupError::TooNew {
@@ -94,7 +94,7 @@ pub fn validate(path: &Path) -> Result<BackupInfo, BackupError> {
         conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
             row.get(0)
         })
-        .map_err(|_| invalid("faltam tabelas da aplicacao"))
+        .map_err(|_| invalid("faltam tabelas da aplicação"))
     };
     Ok(BackupInfo {
         schema_version: version,

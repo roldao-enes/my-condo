@@ -1,3 +1,7 @@
+import "fonts/DMSans-Light.ttf";
+import "fonts/DMSans-Regular.ttf";
+import "fonts/DMSans-SemiBold.ttf";
+import "fonts/DMSans-Bold.ttf";
 import { Theme } from "theme.slint";
 import { Backend } from "state.slint";
 import { LoginScreen, SetupScreen } from "auth.slint";
@@ -11,10 +15,11 @@ export { Backend, UnitRow, RelationRow, StatCard, ActivityRow, TxRow, AccountRow
 
 export component AppWindow inherits Window {
     title: "Meu Condomínio";
+    default-font-family: "DM Sans";
     icon: @image-url("icons/building-2.svg");
-    preferred-width: 1180px;
-    preferred-height: 760px;
-    min-width: 1100px;
+    preferred-width: 1360px;
+    preferred-height: 800px;
+    min-width: 1180px;
     min-height: 600px;
     background: Theme.page;
 

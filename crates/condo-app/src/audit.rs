@@ -184,7 +184,7 @@ mod tests {
             "offboard occupancy #9 on 2025-02-01",
             AuditFailure {
                 kind: "conflict".into(),
-                reason: "conflict: Esta relacao ja foi encerrada.".into(),
+                reason: "conflict: Esta relação já foi encerrada.".into(),
                 status: Some(409),
             },
             None,
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(written[0].record.outcome, AuditOutcome::Success);
         assert_eq!(
             written[1].record.message,
-            "User #3 (admin@example.test) failed to offboard occupancy #9 on 2025-02-01: conflict: Esta relacao ja foi encerrada."
+            "User #3 (admin@example.test) failed to offboard occupancy #9 on 2025-02-01: conflict: Esta relação já foi encerrada."
         );
         assert_eq!(
             written[1].record.failure.as_ref().unwrap().status,

@@ -28,7 +28,7 @@ pub fn hash_password(password: &str) -> ServiceResult<String> {
         .hash_password(password.as_bytes(), &salt)
         .map(|hash| hash.to_string())
         .map_err(|e| {
-            ServiceError::InvalidInput(format!("Nao foi possivel proteger a palavra-passe: {e}"))
+            ServiceError::InvalidInput(format!("Não foi possível proteger a palavra-passe: {e}"))
         })
 }
 
@@ -51,11 +51,11 @@ struct NewAdmin {
 }
 
 fn prepare(full_name: &str, email: &str, password: &str) -> ServiceResult<NewAdmin> {
-    let full_name = text(full_name, 1, 160, "Indique um nome com ate 160 caracteres.")?;
+    let full_name = text(full_name, 1, 160, "Indique um nome com até 160 caracteres.")?;
     let email = email.trim().to_lowercase();
     if email.chars().count() > 254 || !is_valid_email(&email) {
         return Err(ServiceError::InvalidInput(
-            "Indique um email valido.".into(),
+            "Indique um email válido.".into(),
         ));
     }
     let length = password.chars().count();
@@ -74,7 +74,7 @@ fn prepare(full_name: &str, email: &str, password: &str) -> ServiceResult<NewAdm
 fn insert_admin(tx: &Transaction, admin: &NewAdmin) -> ServiceResult<i64> {
     if users::find_by_email(tx, &admin.email)?.is_some() {
         return Err(ServiceError::Conflict(
-            "Ja existe um administrador com este email. Nenhuma conta foi alterada.".into(),
+            "Já existe um administrador com este email. Nenhuma conta foi alterada.".into(),
         ));
     }
     users::insert(
@@ -116,7 +116,7 @@ pub fn setup_first_admin(
     let tx = write_tx(conn)?;
     if users::count(&tx)? > 0 {
         return Err(ServiceError::Conflict(
-            "A aplicacao ja esta configurada.".into(),
+            "A aplicação já está configurada.".into(),
         ));
     }
     let id = insert_admin(&tx, &admin)?;
