@@ -1,5 +1,6 @@
-# Meu Condominio desktop app: check on every OS, build one executable per OS, and publish those
-# executables to GHCR (as OCI artifacts, fetched with `oras`; see docs/desktop-delivery.md).
+# Meu Condominio desktop app: check on every OS, then package it for each OS with the same
+# scripts you can run locally (see docs/packaging.md). Nothing is published anywhere: the packages
+# are kept as downloadable artifacts of the run.
 name: Desktop
 
 on:
@@ -52,20 +53,33 @@ jobs:
           if [ -n "$details" ]; then echo "::error title=cargo test::${details}"; fi
           exit "${status:-0}"
 
-  build:
-    name: Build (${{ matrix.platform }})
+  package:
+    name: Package (${{ matrix.platform }})
     needs: check
-    # Build even if a check failed, so one platform's failure does not hide the others;
-    # publishing below still needs every check to pass.
+    # Package even if a check failed, so one platform's failure does not hide the others.
     if: ${{ !cancelled() }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          # Linux is built on the oldest runner image so the executable runs on most distros.
-          - { platform: linux-x64, os: ubuntu-22.04, targets: "" }
-          - { platform: windows-x64, os: windows-latest, targets: "" }
-          - { platform: macos, os: macos-latest, targets: "aarch64-apple-darwin,x86_64-apple-darwin" }
+          # Linux is built on the oldest runner image so the package works on most distros.
+          - platform: linux-x64
+            os: ubuntu-22.04
+            targets: ""
+            script: ./scripts/package-linux.sh
+            files: dist/linux-x64/*.deb
+          - platform: windows-x64
+            os: windows-latest
+            targets: ""
+            script: ./scripts/build-release.sh
+            files: dist/windows-x64/meu-condominio.exe
+          - platform: macos
+            os: macos-latest
+            targets: "aarch64-apple-darwin,x86_64-apple-darwin"
+            script: ./scripts/package-macos.sh
+            files: |
+              dist/macos/*.zip
+              dist/macos/*.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -78,64 +92,13 @@ jobs:
       - name: System libraries (Linux)
         if: runner.os == 'Linux'
         run: ./scripts/ci/linux-deps.sh
-      - name: Build, self-check and stage the executable
+      - name: Package, self-check and test the result
         env:
           UNIVERSAL: ${{ matrix.platform == 'macos' && '1' || '0' }}
-        run: ./scripts/build-release.sh
-      # PR builds are not published, but this lets anyone download and try them.
+        run: ${{ matrix.script }}
       - uses: actions/upload-artifact@v4
         with:
           name: meu-condominio-${{ matrix.platform }}
-          path: dist/${{ matrix.platform }}/*
+          path: ${{ matrix.files }}
           if-no-files-found: error
           retention-days: 14
-
-  publish:
-    name: Publish to GHCR
-    needs: [check, build]
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          pattern: meu-condominio-*
-      - uses: oras-project/setup-oras@v1
-        with:
-          version: 1.2.3
-      - name: Log in to GHCR
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: printf '%s' "$TOKEN" | oras login ghcr.io --username "${{ github.actor }}" --password-stdin
-      - name: Push one executable per OS
-        run: |
-          set -euo pipefail
-          base="ghcr.io/${GITHUB_REPOSITORY,,}/desktop"
-          tags="sha-${GITHUB_SHA}"
-          case "$GITHUB_REF" in
-            refs/tags/v*) tags="$tags,${GITHUB_REF_NAME#v}" ;;
-            refs/heads/main) tags="$tags,latest" ;;
-          esac
-          for platform in windows-x64 linux-x64 macos; do
-            dir="artifacts/meu-condominio-$platform"
-            file="$(ls "$dir")"
-            (cd "$dir" && oras push "$base/$platform:$tags" \
-              --artifact-type application/vnd.meu-condominio.executable.v1 \
-              --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
-              --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
-              --annotation "org.opencontainers.image.title=Meu Condominio ($platform)" \
-              "$file:application/octet-stream")
-            # Prove what was pushed is byte-for-byte what was built.
-            check="$(mktemp -d)"
-            oras pull "$base/$platform:sha-${GITHUB_SHA}" --output "$check"
-            cmp "$dir/$file" "$check/$file"
-            {
-              echo "### $platform"
-              echo '```'
-              echo "oras pull $base/$platform:${tags##*,}"
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          done

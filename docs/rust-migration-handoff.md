@@ -36,7 +36,7 @@ Deviations from it are listed in section 9.
 | UI: Finances | **Done** (`ui/finances.slint`, `controller/finance.rs`, `viewmodel/finance.rs`, `tests/finance_flow.rs`). See 6.1 notes |
 | UI: Comunicados (announcements) | **Done** (`ui/announcements.slint`, `controller/announcements.rs`, `viewmodel/announcements.rs`, `mail.rs`, `tests/announcements_flow.rs`). See 6.2 notes |
 | UI: Settings (SMTP, backup/restore, demo data) | **Done** (`ui/settings.slint`, `tests/settings_flow.rs`). Not yet done: "send test email", change password, add administrator |
-| CI / release builds | **Written, never run on GitHub**: `.github/workflows/desktop.yml`, `scripts/build-release.sh`, `docs/desktop-delivery.md` (macOS arm64 build + self-check verified locally) |
+| Packaging | **macOS and Ubuntu packages build locally** (see 6.5, `docs/packaging.md`); CI not yet fully green |
 | README / cutover | **Not started** |
 
 **143 tests pass**, `cargo fmt --check` and `cargo clippy --workspace --all-targets -- -D warnings`
@@ -269,13 +269,15 @@ are behind `condo_ui::files::FileDialogs`; tests install a scripted one with
   log file.
 * The login throttle is in memory and resets when the app restarts. That is acceptable for a local app.
 
-### 6.5 Builds, CI and distribution: WRITTEN, NOT YET RUN
+### 6.5 Builds, CI and distribution: PACKAGING DONE LOCALLY, CI NOT YET GREEN
 
-Decision from the owner: deliverables are **one executable per OS, pushed to GHCR** (OCI artifacts
-via `oras`), no Docker, no GitHub Release. See `docs/desktop-delivery.md`; the owner must push a
-branch and read the first run. Still open here: app icons / Windows resource, Linux arm64,
-signing, and whether to also attach files to a GitHub Release (friendlier for non-developers than
-`oras`; the original plan below assumed it).
+Decision from the owner: **no publishing for now**; package locally, Ubuntu and macOS first. See
+`docs/packaging.md`. `scripts/package-macos.sh` (.app/.zip/.dmg, ad-hoc signed, icon) and
+`scripts/package-linux.sh` (.deb) exist, plus `scripts/package-linux-docker.sh` (builds the .deb in
+Ubuntu 22.04 and tests install + launch under Xvfb). `.github/workflows/desktop.yml` checks on three
+OSes and runs the same scripts, keeping artifacts; the GHCR publish job was removed. Still open:
+a green CI run (Windows golden-report test), Windows packaging beyond a bare `.exe` (icon resource,
+installer), signing/notarisation, Linux AppImage.
 
 Original plan (superseded where it differs):
 
