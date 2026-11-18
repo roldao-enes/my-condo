@@ -1,0 +1,5 @@
+# Test fixtures are compared byte for byte, and shell scripts must run on every OS:
+# never let Git rewrite their line endings.
+**/fixtures/** text eol=lf
+*.sh text eol=lf
+*.slint text eol=lf

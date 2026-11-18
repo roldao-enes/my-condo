@@ -46,10 +46,10 @@ jobs:
         run: |
           set -o pipefail
           cargo test --workspace --locked 2>&1 | tee test.log || status=$?
-          # Surface failures as annotations so they show on the run without opening the log.
-          grep -E "^test .* FAILED|panicked at|^error(\[|:)" test.log | head -25 | while IFS= read -r line; do
-            echo "::error title=cargo test::${line:0:400}"
-          done
+          # Show failures as one annotation on the run, so they can be read without the log.
+          # (`|| true`: finding nothing is not an error.)
+          details="$(grep -E -A6 "^test .* FAILED|panicked at|^error(\[|:)" test.log | head -40 | sed 's/%/%25/g' | awk '{printf "%s%%0A", substr($0, 1, 300)}' || true)"
+          if [ -n "$details" ]; then echo "::error title=cargo test::${details}"; fi
           exit "${status:-0}"
 
   build:
