@@ -10,6 +10,7 @@ use chrono::{DateTime, NaiveDate, Utc};
 use condo_app::audit::{anonymous_actor, quote, user_actor, AuditTrail, DEFAULT_MAX_BYTES};
 use condo_app::backup::{self, BackupError};
 use condo_app::paths::AppPaths;
+use condo_app::portable::{self, ImportPlan, PortableError};
 use condo_app::session::{Login, LoginError, Session};
 use condo_audit::{AuditActor, AuditFailure};
 use condo_core::locale::{date, initials, lisbon_date, parse_input_date};
@@ -52,6 +53,8 @@ pub struct Controller {
     dialogs: Box<dyn FileDialogs>,
     /// The backup the person chose and has yet to confirm restoring.
     pending_restore: Option<PathBuf>,
+    /// The export files the person chose, read and checked, awaiting confirmation.
+    pending_import: Option<ImportPlan>,
     clipboard: Box<dyn Clipboard>,
     // Finances: the filters, the data last read, and the ids behind the pickers.
     fin: crate::viewmodel::finance::Filters,
@@ -144,6 +147,7 @@ impl Controller {
             paths: paths.clone(),
             dialogs: Box::new(NativeDialogs),
             pending_restore: None,
+            pending_import: None,
             clipboard: Box::new(NativeClipboard),
             fin: Default::default(),
             finance: None,
@@ -338,6 +342,7 @@ impl Controller {
     fn leave(&mut self, ui: &AppWindow) {
         self.session = None;
         self.pending_restore = None;
+        self.pending_import = None;
         self.finance = None;
         self.pay = None;
         self.keep_dialog = false;
@@ -908,6 +913,120 @@ impl Controller {
         }
     }
 
+    pub fn export_data(&mut self, ui: &AppWindow) {
+        let Some(dir) = self.dialogs.pick_export_dir() else {
+            return;
+        };
+        let actor = self.actor();
+        let where_to = quote(&dir.display().to_string(), 300);
+        let intent = format!("export all data by year to {where_to}");
+        match portable::export_to_dir(&self.conn, &dir, (self.now)()) {
+            Ok(summary) => {
+                self.trail.succeeded(
+                    "data.export",
+                    &actor,
+                    &format!(
+                        "exported all data to {where_to} ({} files, years {:?})",
+                        summary.files.len(),
+                        summary.years
+                    ),
+                    None,
+                );
+                self.notice(
+                    ui,
+                    "success",
+                    &format!("Dados exportados ({} ficheiros).", summary.files.len()),
+                );
+            }
+            Err(error) => {
+                self.reject(ui, "data.export", &actor, &intent, &portable_error(&error));
+            }
+        }
+    }
+
+    pub fn choose_import(&mut self, ui: &AppWindow) {
+        let paths = self.dialogs.open_exports();
+        if paths.is_empty() {
+            return;
+        }
+        let intent = format!("import {} data files", paths.len());
+        match portable::load(&paths) {
+            Ok(plan) => {
+                let s = plan.summary();
+                let years = if s.years.is_empty() {
+                    "nenhum ano".to_owned()
+                } else {
+                    s.years
+                        .iter()
+                        .map(i32::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+                let text = format!(
+                    "Estes ficheiros têm {} frações, {} residentes, {} contas de utilizador e {} movimentos bancários (anos: {}).",
+                    s.units, s.residents, s.users, s.transactions, years
+                );
+                ui.global::<Backend>().set_import_summary(text.into());
+                self.pending_import = Some(plan);
+                self.open_dialog(ui, "import");
+            }
+            Err(error) => {
+                self.reject(
+                    ui,
+                    "data.import",
+                    &self.actor(),
+                    &intent,
+                    &portable_error(&error),
+                );
+            }
+        }
+    }
+
+    pub fn confirm_import(&mut self, ui: &AppWindow) {
+        let Some(plan) = self.pending_import.take() else {
+            return;
+        };
+        let actor = self.actor();
+        let intent = "import data files, replacing all current data";
+        match portable::apply(
+            &mut self.conn,
+            &plan,
+            &self.paths.backups_dir(),
+            (self.now)(),
+        ) {
+            Ok(safety) => {
+                let s = plan.summary();
+                self.trail.succeeded(
+                    "data.import",
+                    &actor,
+                    &format!(
+                        "imported data ({} units, {} residents, {} users, {} movements, years {:?}); previous data kept in {}",
+                        s.units,
+                        s.residents,
+                        s.users,
+                        s.transactions,
+                        s.years,
+                        quote(&safety.display().to_string(), 300),
+                    ),
+                    None,
+                );
+                // The imported data has its own users: sign in again.
+                self.leave(ui);
+                self.start(ui);
+                self.notice(
+                    ui,
+                    "success",
+                    "Dados importados. Inicie sessão com uma conta dos dados importados.",
+                );
+            }
+            Err(error) => {
+                self.close_dialog(ui);
+                self.reject(ui, "data.import", &actor, intent, &portable_error(&error));
+                self.refresh(ui);
+            }
+        }
+    }
+
     pub fn choose_restore(&mut self, ui: &AppWindow) {
         let Some(path) = self.dialogs.open_backup() else {
             return;
@@ -1005,6 +1124,16 @@ impl Controller {
             }
         }
     }
+}
+
+/// Export/import errors in user-facing form: wrong selections are explained, machine failures
+/// are not (their detail stays in the audit log).
+fn portable_error(error: &PortableError) -> ServiceError {
+    ServiceError::Rejected(if error.is_actionable() {
+        error.to_string()
+    } else {
+        "Não foi possível ler ou escrever os ficheiros. Nada foi alterado.".to_owned()
+    })
 }
 
 /// Backup errors in user-facing form (the technical detail stays in the audit log).
@@ -1117,6 +1246,9 @@ pub fn attach(ui: &AppWindow, controller: Controller) -> Rc<RefCell<Controller>>
     on!(on_export_backup, |c, ui| c.export_backup(&ui));
     on!(on_choose_restore, |c, ui| c.choose_restore(&ui));
     on!(on_confirm_restore, |c, ui| c.confirm_restore(&ui));
+    on!(on_export_data, |c, ui| c.export_data(&ui));
+    on!(on_choose_import, |c, ui| c.choose_import(&ui));
+    on!(on_confirm_import, |c, ui| c.confirm_import(&ui));
     on!(on_load_demo, |c, ui| c.load_demo(&ui));
     controller
 }

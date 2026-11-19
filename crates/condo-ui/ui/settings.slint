@@ -169,6 +169,37 @@ export component SettingsPage inherits VerticalLayout {
                 }
             }
 
+            // --- Export / import by year -------------------------------------------------
+            Card {
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 14px;
+                    SectionTitle {
+                        title: "Exportar e importar dados";
+                        text: "Exporta todos os dados para ficheiros legíveis (JSON): um ficheiro base e um por ano. Importar substitui todos os dados atuais. Os ficheiros incluem contas e palavras-passe: guarde-os num local seguro.";
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+                        AppButton {
+                            kind: "primary";
+                            text: "Exportar dados por ano";
+                            clicked => {
+                                Backend.export-data();
+                            }
+                        }
+
+                        AppButton {
+                            text: "Importar dados";
+                            clicked => {
+                                Backend.choose-import();
+                            }
+                        }
+                    }
+                }
+            }
+
             // --- Demo data ---------------------------------------------------------------
             if Backend.can-load-demo: Card {
                 VerticalLayout {
@@ -221,6 +252,40 @@ export component RestoreDialog inherits Modal {
         submit-text: "Restaurar";
         submit => {
             Backend.confirm-restore();
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component ImportDialog inherits Modal {
+    title: "Importar dados";
+    close => {
+        Backend.close-dialog();
+    }
+
+    Text {
+        text: Backend.import-summary;
+        font-size: 14px;
+        color: Theme.text;
+        wrap: word-wrap;
+    }
+
+    Text {
+        text: "TODOS os dados atuais serão substituídos (incluindo as contas de utilizador, as definições de email e os anos que não escolheu). Antes disso, é guardada uma cópia dos dados atuais na pasta de cópias da aplicação. Terá de iniciar sessão outra vez.";
+        font-size: 14px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Importar e substituir";
+        submit => {
+            Backend.confirm-import();
         }
         cancel => {
             Backend.close-dialog();
