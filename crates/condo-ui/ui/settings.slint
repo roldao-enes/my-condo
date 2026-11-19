@@ -1,0 +1,229 @@
+import { ScrollView } from "std-widgets.slint";
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Backend } from "state.slint";
+import { AppButton, TextField, Card, Modal, Segmented, FormActions, InlineError, PageHeading } from "components.slint";
+
+component SectionTitle inherits VerticalLayout {
+    in property <string> title;
+    in property <string> text;
+    spacing: 4px;
+    Text {
+        text: root.title;
+        font-size: 18px;
+        font-weight: 600;
+        color: Theme.text;
+    }
+
+    Text {
+        text: root.text;
+        font-size: 14px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+}
+
+export component SettingsPage inherits VerticalLayout {
+    spacing: 16px;
+    property <bool> secure: Backend.smtp-secure;
+
+    PageHeading {
+        eyebrow: "APLICAÇÃO";
+        title: "Definições";
+        subtitle: "Email, cópias de segurança e dados de exemplo.";
+    }
+
+    ScrollView {
+        vertical-stretch: 1;
+        content-height: content.preferred-height;
+        content := VerticalLayout {
+            spacing: 16px;
+            padding-right: 4px;
+
+            // --- Email -------------------------------------------------------------------
+            Card {
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 14px;
+                    SectionTitle {
+                        title: "Envio de email";
+                        text: Backend.smtp-configured ? "Servidor configurado. Os comunicados podem ser enviados." : "Ainda não configurado. Sem isto, os comunicados não podem ser enviados.";
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        host := TextField {
+                            horizontal-stretch: 1;
+                            label: "Servidor SMTP";
+                            placeholder: "smtp.exemplo.pt";
+                            text: Backend.smtp-host;
+                        }
+
+                        port := TextField {
+                            width: 120px;
+                            label: "Porta";
+                            placeholder: "587";
+                            text: Backend.smtp-port;
+                        }
+                    }
+
+                    Segmented {
+                        width: 360px;
+                        first: "STARTTLS";
+                        second: "TLS direto";
+                        second-selected: root.secure;
+                        chose(second) => {
+                            root.secure = second;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        user := TextField {
+                            horizontal-stretch: 1;
+                            label: "Utilizador";
+                            optional: true;
+                            text: Backend.smtp-user;
+                        }
+
+                        password := TextField {
+                            horizontal-stretch: 1;
+                            label: "Palavra-passe do email";
+                            optional: true;
+                            password: true;
+                            placeholder: Backend.smtp-has-password ? "Deixe vazio para manter a atual" : "";
+                        }
+                    }
+
+                    from := TextField {
+                        label: "Remetente";
+                        placeholder: "Condomínio <condominio@exemplo.pt>";
+                        text: Backend.smtp-from;
+                    }
+
+                    Text {
+                        text: "A palavra-passe fica guardada na base de dados e, por isso, também nas cópias de segurança. Guarde-as num local privado.";
+                        font-size: 13px;
+                        color: Theme.muted;
+                        wrap: word-wrap;
+                    }
+
+                    if Backend.form-error != "": InlineError {
+                        text: Backend.form-error;
+                    }
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: end;
+                        if Backend.smtp-configured: AppButton {
+                            text: "Remover configuração";
+                            clicked => {
+                                Backend.clear-smtp();
+                            }
+                        }
+                        AppButton {
+                            kind: "primary";
+                            text: "Guardar email";
+                            clicked => {
+                                Backend.save-smtp(host.text, port.text, root.secure, user.text, password.text, from.text);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Backup ------------------------------------------------------------------
+            Card {
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 14px;
+                    SectionTitle {
+                        title: "Cópias de segurança";
+                        text: "Todos os dados estão num único ficheiro neste computador. Guarde cópias com regularidade, de preferência noutro disco.";
+                    }
+
+                    Text {
+                        text: "Pasta de dados: " + Backend.data-dir;
+                        font-size: 13px;
+                        color: Theme.muted;
+                        wrap: word-wrap;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        alignment: start;
+                        AppButton {
+                            kind: "primary";
+                            text: "Guardar cópia de segurança";
+                            clicked => {
+                                Backend.export-backup();
+                            }
+                        }
+
+                        AppButton {
+                            text: "Restaurar cópia de segurança";
+                            clicked => {
+                                Backend.choose-restore();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Demo data ---------------------------------------------------------------
+            if Backend.can-load-demo: Card {
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 14px;
+                    SectionTitle {
+                        title: "Dados de exemplo";
+                        text: "Para experimentar a aplicação: acrescenta frações e residentes fictícios. Só está disponível enquanto não houver dados.";
+                    }
+
+                    HorizontalLayout {
+                        alignment: start;
+                        AppButton {
+                            text: "Carregar dados de exemplo";
+                            clicked => {
+                                Backend.load-demo();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component RestoreDialog inherits Modal {
+    title: "Restaurar cópia de segurança";
+    close => {
+        Backend.close-dialog();
+    }
+
+    Text {
+        text: Backend.restore-summary;
+        font-size: 14px;
+        color: Theme.text;
+        wrap: word-wrap;
+    }
+
+    Text {
+        text: "Os dados atuais serão substituídos. Antes disso, é guardada uma cópia dos dados atuais na pasta de cópias da aplicação. Terá de iniciar sessão outra vez.";
+        font-size: 14px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Restaurar";
+        submit => {
+            Backend.confirm-restore();
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}

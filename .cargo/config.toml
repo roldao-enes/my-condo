@@ -1,0 +1,4 @@
+# Windows: link the C runtime statically so meu-condominio.exe is one self-contained file that
+# needs no Visual C++ Redistributable installed.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]

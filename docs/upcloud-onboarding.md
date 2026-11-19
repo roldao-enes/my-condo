@@ -16,16 +16,17 @@ directory on the VM unless stated otherwise. Stop at any failed check.
 
 ## 1. Prepare the Release and Deployment Configuration
 
-- [ ] Merge the application and workflow changes, and ensure CI passes.
-- [ ] Publish a release using a version tag such as `v1.0.0`.
-- [ ] Record its image digest from GHCR. Deploy
-      `ghcr.io/roldao-enes/my-condo@sha256:<actual-digest>`, not `latest`.
-- [ ] Copy `compose.cloud.yaml`, `Caddyfile`, and `.env.cloud.example` from that
-      release to a stable directory on the VM. Do not mix deployment files from
-      unrelated revisions.
+- [ ] For the initial VM setup, copy `compose.cloud.yaml`, `Caddyfile`,
+      `.env.cloud.example`, and `deploy/upcloud-release.sh` from one tested
+      revision to a stable directory on the VM. Create and secure `.env.cloud`.
+- [ ] After creating `.env.cloud`, run `chmod 600 .env.cloud` and
+      `chmod +x upcloud-release.sh` once.
+- [ ] Configure the protected GitHub `production` environment in step 5 before
+      merging the deployment workflow to `main`.
 
-The workflow publishes images and GitHub Releases; it does not provision UpCloud
-resources or deploy to the VM.
+After setup, each merge/push to `main` publishes and queues the tested image for
+deployment after CI and the container smoke test succeed. The deploy job pauses
+for approval. A version tag creates a GitHub Release but does not deploy.
 
 ## 2. Provision the VM and Managed PostgreSQL
 
@@ -266,13 +267,19 @@ schema before applying any pending migrations. Keep the original backup off-VM.
 
 ## 4. Deploy and Verify
 
-Take a database backup/recovery point before upgrades. Run one deployment at a
-time, and stop if migrations fail:
+For the first deployment, run the helper with the published immutable GHCR
+digest. For each later release, take a database backup/recovery point first,
+then run the helper with the new digest. Run one deployment at a time:
 
 ```sh
-docker compose -f compose.cloud.yaml --env-file .env.cloud run --rm migrate &&
-docker compose -f compose.cloud.yaml --env-file .env.cloud up -d --wait --wait-timeout 180
+./upcloud-release.sh ghcr.io/roldao-enes/my-condo@sha256:<actual-digest>
 ```
+
+The helper validates the digest and Compose configuration, pulls the image, runs
+the migration once, and waits for the app's readiness health check. On success it
+updates `APP_IMAGE` in `.env.cloud` and saves the previous successful digest in
+`.app-image.previous`. If any deployment command fails, it stops without changing
+`.env.cloud`. The helper does not create database backups or reverse migrations.
 
 On first deployment only, create the administrator interactively:
 
@@ -302,18 +309,66 @@ if IPv6 is set up and reachable. Then:
 - Verify `https://<your-domain>/health/ready` returns HTTP 200 and the browser
   shows a valid certificate before using the site for sensitive data.
 
-## 5. Establish the Release Procedure
+## 5. Configure and Approve Automated Releases
 
-- [ ] For each release, record the old image digest, update `APP_IMAGE`, pull,
-      run migrations once, then start and verify the app as above.
+Configure these values in the repository's GitHub settings under
+**Settings → Environments → production**:
+
+- Add one or more required reviewers and restrict deployment branches to `main`.
+  The `deploy` job waits for an approval after CI, the container smoke test, and
+  image publishing have succeeded. Approving it deploys the exact digest
+  published by that workflow run.
+- Add these environment variables:
+  - `DEPLOY_SSH_HOST`: the VM's public IP address or SSH hostname.
+  - `DEPLOY_SSH_USER`: a dedicated deployment account on the VM.
+  - `DEPLOY_PATH`: an absolute deployment directory, such as `/opt/my-condo`.
+- Add these environment secrets:
+  - `DEPLOY_SSH_PRIVATE_KEY`: the private key for the deployment account. Add its
+    public key to that account's `authorized_keys`.
+  - `DEPLOY_SSH_KNOWN_HOSTS`: the VM's SSH host-key entry, verified against a
+    trusted source before saving it. Do not rely on an unverified `ssh-keyscan`
+    result.
+
+The deployment account must be able to write to `DEPLOY_PATH` and run Docker
+Compose. Docker access is effectively root-level access, so protect this account
+and key accordingly. Create `DEPLOY_PATH` on the VM and make it owned by this
+account before the first workflow run. Authenticate to GHCR as this same account
+with read-only package credentials so Docker can pull the private image. Keep
+`.env.cloud` on the VM with owner-only permissions; the workflow never reads or
+uploads its contents.
+
+The deployment job uses a GitHub-hosted runner. Keep inbound SSH restricted and
+allow only the current GitHub Actions runner IP ranges published in
+[`https://api.github.com/meta`](https://api.github.com/meta) under `actions`.
+Those ranges can change; monitor and update the firewall allowlist. Do not expose
+SSH to all IPv4 or IPv6 addresses. If maintaining that allowlist is impractical,
+switch to a self-hosted runner with fixed egress before enabling automated
+deployment.
+
+On a push to `main` (including a merge), CI type-checks, lints, builds, and tests
+the application, then the production-container smoke test runs. Only when both
+jobs pass does `publish` build and push the image. The `deploy` job then pauses
+at the `production` environment gate. After approval, it copies the Compose
+configuration and release helper to the VM and runs the helper with that image's
+immutable digest. It refuses to deploy if a newer commit has reached `main` while
+approval was pending. Pull requests and version-tag pushes do not deploy.
+
+## 6. Release and Recovery
+
+- [ ] Before approving a production deployment, take a database backup/recovery
+      point and confirm it is safe to proceed.
+- [ ] After approval, verify `/health/ready` and representative app flows.
 - [ ] Retain the previous image in GHCR. Application rollback uses its digest;
-      it does not reverse database migrations.
+      the helper records the previous successful digest in `.app-image.previous`.
+      To roll back the app, run
+      `./upcloud-release.sh "$(cat .app-image.previous)"`; this does not reverse
+      database migrations.
 - [ ] Use backward-compatible migrations: the old app may still run while a
-      migration executes.
-- [ ] If automating later, use a protected GitHub `production` environment and
-      serialize deployment jobs. Do not store production secrets in the image.
+      migration executes. A failed migration stops the helper before `.env.cloud`
+      is updated, but database changes already applied by a failing migration
+      may still need recovery.
 
-## 6. Rehearse Recovery and Monitor
+## 7. Rehearse Recovery and Monitor
 
 - [ ] Verify the actual managed backup/PITR retention and test restoration into a
       separate database. A backup setting alone is not proof of recoverability.

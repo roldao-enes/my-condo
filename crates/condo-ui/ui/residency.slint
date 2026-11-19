@@ -1,0 +1,1032 @@
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Backend, UnitRow, RelationRow } from "state.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
+import { Icon, IconButton, AppButton, TextField, SelectField, Avatar, Badge, Card, Modal, SearchBox, Segmented, EmptyState, FormActions, InlineError, PageHeading, StatTile } from "components.slint";
+
+component SectionHeading inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> count;
+    in property <string> link;
+    callback link-clicked();
+    spacing: 8px;
+    Text {
+        text: root.title;
+        font-size: 19px;
+        font-weight: 600;
+        color: Theme.text;
+        vertical-alignment: center;
+    }
+
+    if root.count != "": Text {
+        text: root.count;
+        font-size: 14px;
+        color: Theme.muted;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        horizontal-stretch: 1;
+    }
+
+    if root.link != "": HorizontalLayout {
+        spacing: 6px;
+        horizontal-stretch: 0;
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: root.link;
+                font-size: 14px;
+                font-weight: 600;
+                color: Theme.green-text;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.arrow-right;
+                tint: Theme.green-text;
+                size: 16px;
+            }
+        }
+
+        TouchArea {
+            mouse-cursor: MouseCursor.pointer;
+            clicked => {
+                root.link-clicked();
+            }
+        }
+    }
+}
+
+component UnitCard inherits Rectangle {
+    in property <UnitRow> unit;
+    callback clicked();
+    height: 150px;
+    border-radius: 10px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: touch.has-hover ? Theme.surface-alt : Theme.surface;
+    accessible-role: button;
+    accessible-label: "Fração " + root.unit.label;
+    accessible-action-default => {
+        root.clicked();
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 4px;
+        HorizontalLayout {
+            Rectangle {
+                width: 40px;
+                height: 40px;
+                border-radius: 10px;
+                background: Theme.green-soft;
+                Icon {
+                    source: Icons.door;
+                    tint: Theme.green-text;
+                    size: 22px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            Icon {
+                source: Icons.arrow-up-right;
+                tint: Theme.muted;
+                size: 17px;
+            }
+        }
+
+        Text {
+            text: root.unit.label;
+            font-size: 18px;
+            font-weight: 600;
+            color: Theme.text;
+            overflow: elide;
+        }
+
+        Text {
+            text: "Piso " + root.unit.floor;
+            font-size: 13px;
+            color: Theme.muted;
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+        }
+
+        HorizontalLayout {
+            spacing: 4px;
+            for initials in root.unit.avatars: Avatar {
+                initials: initials;
+                size: 28px;
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            Badge {
+                text: root.unit.summary;
+                tone: root.unit.count > 0 ? "green" : "neutral";
+            }
+        }
+    }
+
+    touch := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// --- Overview ------------------------------------------------------------------------------
+export component OverviewPage inherits ScrollView {
+    VerticalLayout {
+        padding-right: 8px;
+        spacing: 22px;
+        PageHeading {
+            eyebrow: "O MEU CONDOMÍNIO";
+            title: Backend.page-title;
+            subtitle: Backend.page-subtitle;
+            AppButton {
+                text: "Nova fração";
+                icon: Icons.plus;
+                clicked => {
+                    Backend.form-error = "";
+                    Backend.dialog = "unit";
+                }
+            }
+
+            AppButton {
+                kind: "primary";
+                text: "Adicionar residente";
+                icon: Icons.user-plus;
+                enabled: Backend.total-units > 0;
+                clicked => {
+                    Backend.open-onboard(-1);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 16px;
+            for stat in Backend.stats: StatTile {
+                label: stat.label;
+                value: stat.value;
+                caption: stat.caption;
+                icon: stat.label == "Frações" ? Icons.building : stat.label == "Residentes ativos" ? Icons.users : Icons.door;
+            }
+        }
+
+        SectionHeading {
+            title: "As suas frações";
+            count: Backend.total-units;
+            link: Backend.total-units > 0 ? "Ver todas" : "";
+            link-clicked => {
+                Backend.navigate("units");
+            }
+        }
+
+        if Backend.total-units == 0: EmptyState {
+            icon: Icons.building;
+            title: "O seu condomínio começa aqui.";
+            text: "Ainda não existem frações registadas.";
+            action: "Criar primeira fração";
+            action-icon: Icons.plus;
+            action-clicked => {
+                Backend.form-error = "";
+                Backend.dialog = "unit";
+            }
+        }
+        if Backend.total-units > 0: grid := Rectangle {
+            property <length> gap: 16px;
+            property <int> rows: Math.ceil(Backend.overview-units.length / 3);
+            height: self.rows * 150px + max(0, self.rows - 1) * self.gap;
+            for unit[i] in Backend.overview-units: UnitCard {
+                unit: unit;
+                x: Math.mod(i, 3) * (self.width + grid.gap);
+                y: Math.floor(i / 3) * (150px + grid.gap);
+                width: (grid.width - 2 * grid.gap) / 3;
+                clicked => {
+                    Backend.open-unit-detail(unit.id);
+                }
+            }
+        }
+
+        SectionHeading {
+            title: "Movimentos recentes";
+            link: "Ver residentes";
+            link-clicked => {
+                Backend.navigate("residents");
+            }
+        }
+
+        if Backend.activity.length == 0: Card {
+            height: 64px;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 10px;
+                VerticalLayout {
+                    alignment: center;
+                    Icon {
+                        source: Icons.history;
+                        tint: Theme.muted;
+                        size: 20px;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: "Ainda não existem movimentos.";
+                        color: Theme.muted;
+                        font-size: 14px;
+                    }
+                }
+            }
+        }
+        if Backend.activity.length > 0: Card {
+            VerticalLayout {
+                for item[i] in Backend.activity: Rectangle {
+                    height: 60px;
+                    HorizontalLayout {
+                        padding-left: 16px;
+                        padding-right: 16px;
+                        spacing: 14px;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 36px;
+                                height: 36px;
+                                border-radius: 18px;
+                                background: item.departed ? Theme.surface-alt : Theme.green-soft;
+                                Icon {
+                                    source: item.departed ? Icons.arrow-up-right : Icons.arrow-down-left;
+                                    tint: item.departed ? Theme.muted : Theme.green-text;
+                                    size: 18px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                }
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            Text {
+                                text: item.name;
+                                font-size: 15px;
+                                font-weight: 600;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+
+                            Text {
+                                text: item.text;
+                                font-size: 13px;
+                                color: Theme.muted;
+                                overflow: elide;
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: item.date;
+                                font-size: 13px;
+                                color: Theme.muted;
+                            }
+                        }
+                    }
+
+                    if i < Backend.activity.length - 1: Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        background: Theme.border;
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- Units ---------------------------------------------------------------------------------
+export component UnitsPage inherits VerticalLayout {
+    spacing: 16px;
+    PageHeading {
+        eyebrow: "GESTÃO DO CONDOMÍNIO";
+        title: Backend.page-title;
+        subtitle: Backend.page-subtitle;
+        AppButton {
+            kind: "primary";
+            text: "Nova fração";
+            icon: Icons.plus;
+            clicked => {
+                Backend.form-error = "";
+                Backend.dialog = "unit";
+            }
+        }
+
+        AppButton {
+            text: "Adicionar residente";
+            icon: Icons.user-plus;
+            enabled: Backend.total-units > 0;
+            clicked => {
+                Backend.open-onboard(-1);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 14px;
+        SearchBox {
+            placeholder: "Pesquisar fração ou piso...";
+            horizontal-stretch: 1;
+            edited(text) => {
+                Backend.search(text);
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: Backend.units-count-text;
+                font-size: 13px;
+                color: Theme.muted;
+            }
+        }
+    }
+
+    if Backend.units.length == 0: EmptyState {
+        icon: Icons.door;
+        title: Backend.empty-title;
+        text: Backend.empty-text;
+        vertical-stretch: 0;
+    }
+    if Backend.units.length > 0: Card {
+        vertical-stretch: 1;
+        VerticalLayout {
+            Rectangle {
+                height: 44px;
+                background: Theme.surface-alt;
+                Text {
+                    x: 16px;
+                    width: parent.width * 0.26;
+                    height: parent.height;
+                    text: "Fração";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: parent.width * 0.28;
+                    width: parent.width * 0.10;
+                    height: parent.height;
+                    text: "Piso";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: parent.width * 0.40;
+                    width: parent.width * 0.32;
+                    height: parent.height;
+                    text: "Residentes ativos";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: parent.width * 0.74;
+                    width: parent.width * 0.16;
+                    height: parent.height;
+                    text: "Estado";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+            }
+
+            ListView {
+                vertical-stretch: 1;
+                for unit in Backend.units: row := Rectangle {
+                    height: 60px;
+                    background: touch.has-hover ? Theme.surface-alt : transparent;
+                    accessible-role: button;
+                    accessible-label: "Fração " + unit.label;
+                    accessible-action-default => {
+                        Backend.open-unit-detail(unit.id);
+                    }
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        background: Theme.border;
+                    }
+
+                    Rectangle {
+                        x: 16px;
+                        width: row.width * 0.26 - 16px;
+                        HorizontalLayout {
+                            spacing: 10px;
+                            VerticalLayout {
+                                alignment: center;
+                                Rectangle {
+                                    width: 32px;
+                                    height: 32px;
+                                    border-radius: 8px;
+                                    background: Theme.green-soft;
+                                    Icon {
+                                        source: Icons.door;
+                                        tint: Theme.green-text;
+                                        size: 18px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                    }
+                                }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: unit.label;
+                                    font-size: 15px;
+                                    font-weight: 600;
+                                    color: Theme.text;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        x: row.width * 0.28;
+                        width: row.width * 0.10;
+                        height: parent.height;
+                        text: unit.floor;
+                        font-size: 14px;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                    }
+
+                    Text {
+                        x: row.width * 0.40;
+                        width: row.width * 0.32;
+                        height: parent.height;
+                        text: unit.people != "" ? unit.people : "Nenhum";
+                        font-size: 14px;
+                        color: unit.people != "" ? Theme.text : Theme.muted;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+
+                    Rectangle {
+                        x: row.width * 0.74;
+                        width: row.width * 0.16;
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                alignment: start;
+                                Badge {
+                                    text: unit.count > 0 ? "Ocupada" : "Sem residentes";
+                                    tone: unit.count > 0 ? "green" : "neutral";
+                                }
+                            }
+                        }
+                    }
+
+                    Icon {
+                        x: row.width - 36px;
+                        y: (parent.height - self.height) / 2;
+                        source: Icons.arrow-up-right;
+                        tint: Theme.muted;
+                        size: 18px;
+                    }
+
+                    touch := TouchArea {
+                        mouse-cursor: MouseCursor.pointer;
+                        clicked => {
+                            Backend.open-unit-detail(unit.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if Backend.units.length > 0: Rectangle {
+        height: 0px;
+    }
+}
+
+// --- Residents -----------------------------------------------------------------------------
+export component ResidentsPage inherits VerticalLayout {
+    spacing: 16px;
+    PageHeading {
+        eyebrow: "GESTÃO DO CONDOMÍNIO";
+        title: Backend.page-title;
+        subtitle: Backend.page-subtitle;
+        AppButton {
+            kind: "primary";
+            text: "Adicionar residente";
+            icon: Icons.user-plus;
+            enabled: Backend.total-units > 0;
+            clicked => {
+                Backend.open-onboard(-1);
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 14px;
+        Segmented {
+            width: 300px;
+            first: "Ativos";
+            second: "Histórico";
+            first-count: Backend.active-count;
+            second-count: Backend.history-count;
+            second-selected: Backend.history;
+            chose(second) => {
+                Backend.set-history(second);
+            }
+        }
+
+        SearchBox {
+            placeholder: "Pesquisar nome, email ou fração...";
+            horizontal-stretch: 1;
+            edited(text) => {
+                Backend.search(text);
+            }
+        }
+    }
+
+    if Backend.relationships.length == 0: EmptyState {
+        icon: Backend.history ? Icons.history : Icons.users;
+        title: Backend.empty-title;
+        text: Backend.empty-text;
+    }
+    if Backend.relationships.length > 0: Card {
+        vertical-stretch: 1;
+        VerticalLayout {
+            Rectangle {
+                height: 44px;
+                background: Theme.surface-alt;
+                Text {
+                    x: 16px;
+                    width: parent.width * 0.32;
+                    height: parent.height;
+                    text: "Residente";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: parent.width * 0.36;
+                    width: parent.width * 0.14;
+                    height: parent.height;
+                    text: "Fração";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: parent.width * 0.52;
+                    width: parent.width * 0.16;
+                    height: parent.height;
+                    text: "Relação";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    x: parent.width * 0.70;
+                    width: parent.width * 0.20;
+                    height: parent.height;
+                    text: Backend.history ? "Período" : "Entrada";
+                    font-size: 13px;
+                    font-weight: 600;
+                    color: Theme.muted;
+                    vertical-alignment: center;
+                }
+            }
+
+            ListView {
+                vertical-stretch: 1;
+                for rel in Backend.relationships: row := Rectangle {
+                    height: 66px;
+                    Rectangle {
+                        y: parent.height - 1px;
+                        height: 1px;
+                        background: Theme.border;
+                    }
+
+                    Rectangle {
+                        x: 16px;
+                        width: row.width * 0.34 - 16px;
+                        HorizontalLayout {
+                            spacing: 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                Avatar {
+                                    initials: rel.initials;
+                                }
+                            }
+
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: rel.name;
+                                    font-size: 15px;
+                                    font-weight: 600;
+                                    color: Theme.text;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: rel.contact;
+                                    font-size: 12px;
+                                    color: Theme.muted;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        x: row.width * 0.36;
+                        width: row.width * 0.14;
+                        VerticalLayout {
+                            alignment: center;
+                            HorizontalLayout {
+                                alignment: start;
+                                Badge {
+                                    text: rel.unit-label;
+                                }
+                            }
+                        }
+                    }
+
+                    Text {
+                        x: row.width * 0.52;
+                        width: row.width * 0.16;
+                        height: parent.height;
+                        text: rel.role;
+                        font-size: 14px;
+                        color: Theme.text;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle {
+                        x: row.width * 0.70;
+                        width: row.width * 0.20;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: rel.start;
+                                font-size: 14px;
+                                color: Theme.text;
+                            }
+
+                            if rel.end != "": Text {
+                                text: "a " + rel.end;
+                                font-size: 13px;
+                                color: Theme.muted;
+                            }
+                        }
+                    }
+
+                    if rel.active: IconButton {
+                        x: row.width - 52px;
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.log-out;
+                        label: "Registar saída de " + rel.name;
+                        clicked => {
+                            Backend.open-offboard(rel.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- Dialogs -------------------------------------------------------------------------------
+export component UnitDialog inherits Modal {
+    title: "Nova fração";
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        label.focus-field();
+    }
+
+    label := TextField {
+        label: "Designação";
+        placeholder: "Ex.: 1.º Esq.";
+        accepted => {
+            floor.focus-field();
+        }
+    }
+
+    floor := TextField {
+        label: "Piso";
+        placeholder: "Ex.: 1";
+        accepted => {
+            Backend.create-unit(label.text, floor.text);
+        }
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Criar fração";
+        submit => {
+            Backend.create-unit(label.text, floor.text);
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component OnboardDialog inherits Modal {
+    title: "Adicionar residente";
+    card-width: 540px;
+    property <bool> existing: false;
+    // Held here (not in the fields) because the fields come and go with the toggle.
+    property <string> name-text;
+    property <string> email-text;
+    property <string> phone-text;
+    property <int> person-index: 0;
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        unit.current-index = Backend.preselect-unit-index >= 0 ? Backend.preselect-unit-index : 0;
+    }
+    function submit() {
+        Backend.onboard(unit.current-index, root.existing, root.person-index, root.name-text, root.email-text, root.phone-text, role.current-index, date.text);
+    }
+
+    unit := SelectField {
+        label: "Fração";
+        model: Backend.unit-options;
+    }
+
+    if Backend.resident-options.length > 1: Segmented {
+        first: "Nova pessoa";
+        second: "Pessoa existente";
+        second-selected: root.existing;
+        chose(second) => {
+            root.existing = second;
+        }
+    }
+    if root.existing: SelectField {
+        label: "Residente";
+        model: Backend.resident-options;
+        current-index <=> root.person-index;
+    }
+    if !root.existing: TextField {
+        label: "Nome completo";
+        text <=> root.name-text;
+    }
+    if !root.existing: HorizontalLayout {
+        spacing: 12px;
+        TextField {
+            label: "Email";
+            optional: true;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            text <=> root.email-text;
+        }
+
+        TextField {
+            label: "Telefone";
+            optional: true;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            text <=> root.phone-text;
+        }
+    }
+    HorizontalLayout {
+        spacing: 12px;
+        role := SelectField {
+            label: "Relação";
+            model: Backend.role-options;
+            // No "choose one" prompt here: Proprietário is a real default.
+            placeholder-first: false;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+        }
+
+        date := TextField {
+            label: "Data de entrada";
+            placeholder: "dd/mm/aaaa";
+            text: Backend.today-text;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            accepted => {
+                root.submit();
+            }
+        }
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Adicionar residente";
+        submit => {
+            root.submit();
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component OffboardDialog inherits Modal {
+    title: "Registar saída";
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        date.focus-field();
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                initials: Backend.offboard-target.initials;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: Backend.offboard-target.name;
+                font-size: 16px;
+                font-weight: 600;
+                color: Theme.text;
+            }
+
+            Text {
+                text: Backend.offboard-target.unit-label + " · " + Backend.offboard-target.role;
+                font-size: 13px;
+                color: Theme.muted;
+            }
+        }
+    }
+
+    Text {
+        text: "A relação com esta fração será encerrada. Os dados e o histórico serão preservados.";
+        font-size: 14px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
+    date := TextField {
+        label: "Data de saída";
+        placeholder: "dd/mm/aaaa";
+        text: Backend.today-text;
+        accepted => {
+            Backend.offboard(Backend.offboard-target.id, self.text);
+        }
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Confirmar saída";
+        submit => {
+            Backend.offboard(Backend.offboard-target.id, date.text);
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component DetailDialog inherits Modal {
+    title: Backend.detail-title;
+    card-width: 560px;
+    close => {
+        Backend.close-dialog();
+    }
+
+    HorizontalLayout {
+        spacing: 10px;
+        VerticalLayout {
+            alignment: center;
+            Icon {
+                source: Icons.door;
+                tint: Theme.green-text;
+                size: 24px;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Text {
+                text: "Piso " + Backend.detail-floor;
+                font-size: 15px;
+                color: Theme.text;
+            }
+        }
+    }
+
+    Text {
+        text: "Residentes e histórico";
+        font-size: 16px;
+        font-weight: 600;
+        color: Theme.text;
+    }
+
+    if Backend.detail-rows.length == 0: Text {
+        text: "Sem residentes registados.";
+        font-size: 14px;
+        color: Theme.muted;
+    }
+    if Backend.detail-rows.length > 0: ListView {
+        height: min(Backend.detail-rows.length * 72px, 288px);
+        for rel in Backend.detail-rows: Rectangle {
+            height: 72px;
+            HorizontalLayout {
+                spacing: 12px;
+                padding-right: 8px;
+                VerticalLayout {
+                    alignment: center;
+                    Avatar {
+                        initials: rel.initials;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: rel.name;
+                        font-size: 15px;
+                        font-weight: 600;
+                        color: Theme.text;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: rel.role + " · " + rel.start + (rel.end != "" ? " a " + rel.end : "");
+                        font-size: 12px;
+                        color: Theme.muted;
+                        overflow: elide;
+                    }
+
+                    if rel.email != "" || rel.phone != "": Text {
+                        text: rel.email + (rel.email != "" && rel.phone != "" ? "  ·  " : "") + rel.phone;
+                        font-size: 12px;
+                        color: Theme.muted;
+                        overflow: elide;
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    Badge {
+                        text: rel.active ? "Ativo" : "Histórico";
+                        tone: rel.active ? "green" : "neutral";
+                    }
+                }
+            }
+        }
+    }
+    HorizontalLayout {
+        alignment: end;
+        AppButton {
+            kind: "primary";
+            text: "Adicionar residente";
+            icon: Icons.user-plus;
+            clicked => {
+                Backend.open-onboard(Backend.detail-unit-id);
+            }
+        }
+    }
+}

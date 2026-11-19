@@ -1,0 +1,23 @@
+[workspace]
+resolver = "2"
+members = ["crates/condo-core", "crates/condo-audit", "crates/condo-db", "crates/condo-mail", "crates/condo-app", "crates/condo-ui"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.95"
+license = "UNLICENSED"
+publish = false
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+# Password hashing is deliberately slow; unoptimized debug builds make every login and test crawl.
+[profile.dev.package.argon2]
+opt-level = 3
+[profile.dev.package.blake2]
+opt-level = 3
+
+# Release builds are what people download: smaller, and one file with no debug symbols.
+[profile.release]
+lto = "thin"
+strip = "symbols"

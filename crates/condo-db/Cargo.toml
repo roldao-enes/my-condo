@@ -1,0 +1,25 @@
+[package]
+name = "condo-db"
+version = "0.1.0"
+description = "SQLite persistence and transactional services for Meu Condominio"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+condo-core = { path = "../condo-core" }
+condo-audit = { path = "../condo-audit" }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+serde_json = "1"
+thiserror = "2"
+rusqlite = { version = "0.40.2", features = ["bundled", "chrono"] }
+sha2 = "0.10.9"
+argon2 = "0.5.3"
+rand_core = { version = "0.6", features = ["getrandom"] }
+
+[dev-dependencies]
+tempfile = "3.27.0"

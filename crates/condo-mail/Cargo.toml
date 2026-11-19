@@ -1,0 +1,18 @@
+[package]
+name = "condo-mail"
+version = "0.1.0"
+description = "Email delivery (SMTP) and the retrying queue runner for Meu Condominio"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+condo-core = { path = "../condo-core" }
+condo-db = { path = "../condo-db" }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+thiserror = "2"
+lettre = { version = "0.11.19", default-features = false, features = ["builder", "ring", "rustls", "smtp-transport", "webpki-roots"] }

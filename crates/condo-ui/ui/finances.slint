@@ -1,0 +1,1254 @@
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Backend, TxRow } from "state.slint";
+import { ListView, ScrollView } from "std-widgets.slint";
+import { Icon, IconButton, AppButton, TextField, SelectField, Badge, Card, Modal, SearchBox, EmptyState, FormActions, InlineError, PageHeading, Checkbox, Tabs } from "components.slint";
+
+// One table cell, placed by fractions of the row's width so header and rows line up.
+export component Cell inherits Text {
+    in property <float> from;
+    in property <float> span;
+    in property <bool> head: false;
+    in property <bool> right: false;
+    in property <color> tone: Theme.text;
+    // Size of the row this cell sits in.
+    in property <length> total;
+    in property <length> h;
+    x: root.total * root.from + 16px;
+    width: root.total * root.span - 24px;
+    height: root.h;
+    font-size: root.head ? 13px : 14px;
+    font-weight: root.head ? 600 : 400;
+    color: root.head ? Theme.muted : root.tone;
+    vertical-alignment: center;
+    horizontal-alignment: root.right ? TextHorizontalAlignment.right : TextHorizontalAlignment.left;
+    overflow: elide;
+}
+
+export component HeadRow inherits Rectangle {
+    height: 40px;
+    background: Theme.surface-alt;
+}
+
+export component RowLine inherits Rectangle {
+    Rectangle {
+        y: parent.height - 1px;
+        height: 1px;
+        background: Theme.border;
+    }
+}
+
+// A compact button for use inside table rows.
+component SmallButton inherits Rectangle {
+    in property <string> text;
+    in property <string> label;
+    callback clicked();
+    height: 28px;
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: Theme.border;
+    background: touch.has-hover ? Theme.surface-alt : Theme.surface;
+    accessible-role: button;
+    accessible-label: root.label != "" ? root.label : root.text;
+    accessible-action-default => {
+        root.clicked();
+    }
+    Text {
+        text: root.text;
+        font-size: 13px;
+        font-weight: 600;
+        color: Theme.text;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    touch := TouchArea {
+        mouse-cursor: MouseCursor.pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component MiniStat inherits Card {
+    in property <string> label;
+    in property <string> value;
+    in property <string> caption;
+    height: 92px;
+    VerticalLayout {
+        padding: 14px;
+        spacing: 2px;
+        Text {
+            text: root.label;
+            font-size: 13px;
+            color: Theme.muted;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.value;
+            font-size: 24px;
+            font-weight: 600;
+            color: Theme.text;
+        }
+
+        Text {
+            text: root.caption;
+            font-size: 12px;
+            color: Theme.muted;
+            overflow: elide;
+        }
+    }
+}
+
+component SectionTitle inherits HorizontalLayout {
+    in property <string> title;
+    in property <string> count;
+    spacing: 8px;
+    padding-left: 4px;
+    Text {
+        text: root.title;
+        font-size: 17px;
+        font-weight: 600;
+        color: Theme.text;
+        vertical-alignment: center;
+    }
+
+    Text {
+        text: root.count;
+        font-size: 14px;
+        color: Theme.muted;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        horizontal-stretch: 1;
+    }
+    @children
+}
+
+export component FinancesPage inherits VerticalLayout {
+    spacing: 14px;
+
+    PageHeading {
+        eyebrow: "GESTÃO DO CONDOMÍNIO";
+        title: "Finanças";
+        subtitle: Backend.fin-subtitle;
+        AppButton {
+            text: "Resumo financeiro";
+            icon: Icons.file-text;
+            clicked => {
+                Backend.open-report();
+            }
+        }
+
+        AppButton {
+            text: "Registar quota";
+            icon: Icons.plus;
+            enabled: Backend.fin-can-charge;
+            clicked => {
+                Backend.open-charge();
+            }
+        }
+
+        AppButton {
+            kind: "primary";
+            text: "Importar extrato";
+            icon: Icons.file-up;
+            clicked => {
+                Backend.import-statement();
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        for tile in Backend.fin-tiles: MiniStat {
+            label: tile.label;
+            value: tile.value;
+            caption: tile.caption;
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 24px;
+        height: 34px;
+        padding-left: 4px;
+        for item in Backend.fin-breakdown: HorizontalLayout {
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: item.label;
+                    font-size: 13px;
+                    color: Theme.muted;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Text {
+                    text: item.amount;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: Theme.text;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Rectangle {
+                    height: 6px;
+                    border-radius: 3px;
+                    background: Theme.surface-alt;
+                    accessible-role: progress-indicator;
+                    accessible-label: "Despesas: " + item.label;
+                    accessible-value: item.amount;
+                    Rectangle {
+                        x: 0px;
+                        width: parent.width * item.share;
+                        border-radius: 3px;
+                        background: Theme.green;
+                    }
+                }
+            }
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        tabs := Tabs {
+            width: 350px;
+            labels: ["Movimentos", "Despesas", "Dívida", "Etiquetas"];
+            current: Backend.fin-view;
+            chose(index) => {
+                search.text = "";
+                Backend.search("");
+                Backend.fin-set-view(index);
+            }
+        }
+
+        search := SearchBox {
+            horizontal-stretch: 1;
+            placeholder: Backend.fin-search-hint;
+            edited(text) => {
+                Backend.search(text);
+            }
+        }
+
+        SelectField {
+            width: 170px;
+            label: "Período dos movimentos";
+            hide-label: true;
+            placeholder-first: false;
+            model: Backend.fin-months;
+            selected(index) => {
+                Backend.fin-set-month(index);
+            }
+        }
+
+        if Backend.fin-view == 0: SelectField {
+            width: 240px;
+            label: "Filtrar classificação";
+            hide-label: true;
+            placeholder-first: false;
+            model: Backend.fin-categories;
+            selected(index) => {
+                Backend.fin-set-category(index);
+            }
+        }
+
+        if Backend.fin-view == 1: SelectField {
+            width: 240px;
+            label: "Filtrar classificação";
+            hide-label: true;
+            placeholder-first: false;
+            model: Backend.fin-categories;
+            selected(index) => {
+                Backend.fin-set-category(index);
+            }
+        }
+    }
+
+    // --- Movements and expenses ---------------------------------------------------------
+    if Backend.fin-view < 2 && Backend.fin-tx.length == 0: EmptyState {
+        icon: Icons.wallet;
+        title: "Sem movimentos";
+        text: Backend.fin-empty-text;
+    }
+    if Backend.fin-view < 2 && Backend.fin-tx.length > 0: Card {
+        vertical-stretch: 1;
+        VerticalLayout {
+            hr1 := HeadRow {
+                Cell {
+                    total: hr1.width;
+                    h: hr1.height;
+                    head: true;
+                    from: 0.0;
+                    span: 0.12;
+                    text: "Data / valor";
+                }
+
+                Cell {
+                    total: hr1.width;
+                    h: hr1.height;
+                    head: true;
+                    from: 0.12;
+                    span: 0.32;
+                    text: "Descrição";
+                }
+
+                Cell {
+                    total: hr1.width;
+                    h: hr1.height;
+                    head: true;
+                    right: true;
+                    from: 0.44;
+                    span: 0.13;
+                    text: "Montante";
+                }
+
+                Cell {
+                    total: hr1.width;
+                    h: hr1.height;
+                    head: true;
+                    right: true;
+                    from: 0.57;
+                    span: 0.13;
+                    text: "Saldo";
+                }
+
+                Cell {
+                    total: hr1.width;
+                    h: hr1.height;
+                    head: true;
+                    from: 0.72;
+                    span: 0.28;
+                    text: Backend.fin-view == 1 ? "Classificação" : "Classificação / pagamento";
+                }
+            }
+
+            ListView {
+                vertical-stretch: 1;
+                for tx in Backend.fin-tx: row := RowLine {
+                    height: 62px;
+                    Rectangle {
+                        x: 0px;
+                        width: row.width * 0.12;
+                        VerticalLayout {
+                            alignment: center;
+                            padding-left: 16px;
+                            Text {
+                                text: tx.date;
+                                font-size: 14px;
+                                color: Theme.text;
+                            }
+
+                            Text {
+                                text: tx.value-date;
+                                font-size: 12px;
+                                color: Theme.muted;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        x: row.width * 0.12 + 16px;
+                        width: row.width * 0.32 - 24px;
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: tx.description;
+                                font-size: 14px;
+                                color: Theme.text;
+                                overflow: elide;
+                            }
+
+                            if tx.tag != "": Text {
+                                text: "Etiqueta: " + tx.tag;
+                                font-size: 12px;
+                                color: Theme.green-text;
+                                overflow: elide;
+                            }
+                        }
+                    }
+
+                    Cell {
+                        total: row.width;
+                        h: row.height;
+                        right: true;
+                        from: 0.44;
+                        span: 0.13;
+                        text: tx.amount;
+                        tone: tx.negative ? Theme.danger : Theme.green-text;
+                    }
+
+                    Cell {
+                        total: row.width;
+                        h: row.height;
+                        right: true;
+                        from: 0.57;
+                        span: 0.13;
+                        text: tx.balance;
+                    }
+
+                    Rectangle {
+                        x: row.width * 0.72 + 16px;
+                        width: row.width * 0.28 - 24px;
+                        VerticalLayout {
+                            alignment: center;
+                            spacing: 3px;
+                            if !tx.expense: Text {
+                                text: tx.who;
+                                font-size: 12px;
+                                color: Theme.muted;
+                                overflow: elide;
+                            }
+                            if tx.expense: SmallButton {
+                                text: tx.who;
+                                label: "Classificar: " + tx.description;
+                                clicked => {
+                                    Backend.open-classify(tx.id);
+                                }
+                            }
+                            if !tx.expense: SmallButton {
+                                text: tx.action;
+                                label: "Associar pagamento: " + tx.description;
+                                clicked => {
+                                    Backend.open-payment(tx.id);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Debt --------------------------------------------------------------------------------
+    if Backend.fin-view == 2 && Backend.fin-accounts.length == 0 && Backend.fin-charges.length == 0: EmptyState {
+        icon: Icons.wallet;
+        title: "Sem quotas";
+        text: Backend.fin-empty-text;
+    }
+    if Backend.fin-view == 2 && (Backend.fin-accounts.length > 0 || Backend.fin-charges.length > 0): VerticalLayout {
+        vertical-stretch: 1;
+        spacing: 10px;
+        SectionTitle {
+            title: "Saldos por residente";
+            count: Backend.fin-accounts.length;
+        }
+
+        Card {
+            height: min(40px + Backend.fin-accounts.length * 44px, 40px + 3 * 44px);
+            VerticalLayout {
+                hr2 := HeadRow {
+                    Cell {
+                        total: hr2.width;
+                        h: hr2.height;
+                        head: true;
+                        from: 0.0;
+                        span: 0.4;
+                        text: "Residente";
+                    }
+
+                    Cell {
+                        total: hr2.width;
+                        h: hr2.height;
+                        head: true;
+                        from: 0.4;
+                        span: 0.2;
+                        text: "Fração";
+                    }
+
+                    Cell {
+                        total: hr2.width;
+                        h: hr2.height;
+                        head: true;
+                        right: true;
+                        from: 0.6;
+                        span: 0.2;
+                        text: "Por liquidar";
+                    }
+
+                    Cell {
+                        total: hr2.width;
+                        h: hr2.height;
+                        head: true;
+                        right: true;
+                        from: 0.8;
+                        span: 0.2;
+                        text: "Vencido";
+                    }
+                }
+
+                ListView {
+                    vertical-stretch: 1;
+                    for account in Backend.fin-accounts: arow := RowLine {
+                        height: 44px;
+                        Cell {
+                            total: arow.width;
+                            h: arow.height;
+                            from: 0.0;
+                            span: 0.4;
+                            text: account.name;
+                        }
+
+                        Cell {
+                            total: arow.width;
+                            h: arow.height;
+                            from: 0.4;
+                            span: 0.2;
+                            text: account.unit;
+                        }
+
+                        Cell {
+                            total: arow.width;
+                            h: arow.height;
+                            right: true;
+                            from: 0.6;
+                            span: 0.2;
+                            text: account.outstanding;
+                        }
+
+                        Cell {
+                            total: arow.width;
+                            h: arow.height;
+                            right: true;
+                            from: 0.8;
+                            span: 0.2;
+                            text: account.overdue;
+                            tone: account.has-overdue ? Theme.danger : Theme.text;
+                        }
+                    }
+                }
+            }
+        }
+
+        SectionTitle {
+            title: "Quotas";
+            count: Backend.fin-charges.length;
+        }
+
+        Card {
+            vertical-stretch: 1;
+            VerticalLayout {
+                hr3 := HeadRow {
+                    Cell {
+                        total: hr3.width;
+                        h: hr3.height;
+                        head: true;
+                        from: 0.0;
+                        span: 0.24;
+                        text: "Residente / fração";
+                    }
+
+                    Cell {
+                        total: hr3.width;
+                        h: hr3.height;
+                        head: true;
+                        from: 0.24;
+                        span: 0.2;
+                        text: "Quota";
+                    }
+
+                    Cell {
+                        total: hr3.width;
+                        h: hr3.height;
+                        head: true;
+                        from: 0.44;
+                        span: 0.11;
+                        text: "Vencimento";
+                    }
+
+                    Cell {
+                        total: hr3.width;
+                        h: hr3.height;
+                        head: true;
+                        right: true;
+                        from: 0.55;
+                        span: 0.11;
+                        text: "Valor";
+                    }
+
+                    Cell {
+                        total: hr3.width;
+                        h: hr3.height;
+                        head: true;
+                        right: true;
+                        from: 0.66;
+                        span: 0.11;
+                        text: "Pago";
+                    }
+
+                    Cell {
+                        total: hr3.width;
+                        h: hr3.height;
+                        head: true;
+                        right: true;
+                        from: 0.77;
+                        span: 0.12;
+                        text: "Por liquidar";
+                    }
+
+                    Cell {
+                        total: hr3.width;
+                        h: hr3.height;
+                        head: true;
+                        from: 0.9;
+                        span: 0.1;
+                        text: "Estado";
+                    }
+                }
+
+                ListView {
+                    vertical-stretch: 1;
+                    for charge in Backend.fin-charges: crow := RowLine {
+                        height: 54px;
+                        Rectangle {
+                            x: 16px;
+                            width: crow.width * 0.24 - 24px;
+                            VerticalLayout {
+                                alignment: center;
+                                Text {
+                                    text: charge.name;
+                                    font-size: 14px;
+                                    font-weight: 600;
+                                    color: Theme.text;
+                                    overflow: elide;
+                                }
+
+                                Text {
+                                    text: charge.unit;
+                                    font-size: 12px;
+                                    color: Theme.muted;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+
+                        Cell {
+                            total: crow.width;
+                            h: crow.height;
+                            from: 0.24;
+                            span: 0.2;
+                            text: charge.description;
+                        }
+
+                        Cell {
+                            total: crow.width;
+                            h: crow.height;
+                            from: 0.44;
+                            span: 0.11;
+                            text: charge.due;
+                        }
+
+                        Cell {
+                            total: crow.width;
+                            h: crow.height;
+                            right: true;
+                            from: 0.55;
+                            span: 0.11;
+                            text: charge.amount;
+                        }
+
+                        Cell {
+                            total: crow.width;
+                            h: crow.height;
+                            right: true;
+                            from: 0.66;
+                            span: 0.11;
+                            text: charge.paid;
+                        }
+
+                        Cell {
+                            total: crow.width;
+                            h: crow.height;
+                            right: true;
+                            from: 0.77;
+                            span: 0.12;
+                            text: charge.outstanding;
+                        }
+
+                        Rectangle {
+                            x: crow.width * 0.9 + 8px;
+                            width: crow.width * 0.1 - 12px;
+                            VerticalLayout {
+                                alignment: center;
+                                HorizontalLayout {
+                                    alignment: start;
+                                    Badge {
+                                        text: charge.status;
+                                        tone: charge.tone;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Tags ------------------------------------------------------------------------------
+    if Backend.fin-view == 3: VerticalLayout {
+        vertical-stretch: 1;
+        spacing: 10px;
+        SectionTitle {
+            title: "Nomes e etiquetas";
+            count: Backend.fin-tags.length;
+            AppButton {
+                kind: "primary";
+                text: "Nova etiqueta";
+                icon: Icons.plus;
+                clicked => {
+                    Backend.open-tag(-1);
+                }
+            }
+        }
+
+        if Backend.fin-tags.length == 0: EmptyState {
+            icon: Icons.tag;
+            title: "Sem etiquetas";
+            text: Backend.fin-empty-text;
+        }
+        if Backend.fin-tags.length > 0: Card {
+            vertical-stretch: 1;
+            VerticalLayout {
+                hr4 := HeadRow {
+                    Cell {
+                        total: hr4.width;
+                        h: hr4.height;
+                        head: true;
+                        from: 0.0;
+                        span: 0.19;
+                        text: "Etiqueta";
+                    }
+
+                    Cell {
+                        total: hr4.width;
+                        h: hr4.height;
+                        head: true;
+                        from: 0.13;
+                        span: 0.2;
+                        text: "Nome no extrato";
+                    }
+
+                    Cell {
+                        total: hr4.width;
+                        h: hr4.height;
+                        head: true;
+                        from: 0.38;
+                        span: 0.16;
+                        text: "Correspondência";
+                    }
+
+                    Cell {
+                        total: hr4.width;
+                        h: hr4.height;
+                        head: true;
+                        from: 0.54;
+                        span: 0.19;
+                        text: "Classificação";
+                    }
+
+                    Cell {
+                        total: hr4.width;
+                        h: hr4.height;
+                        head: true;
+                        from: 0.73;
+                        span: 0.17;
+                        text: "Residente / fração";
+                    }
+                }
+
+                ListView {
+                    vertical-stretch: 1;
+                    for tag in Backend.fin-tags: trow := RowLine {
+                        height: 50px;
+                        Cell {
+                            total: trow.width;
+                            h: trow.height;
+                            from: 0.0;
+                            span: 0.19;
+                            text: tag.name;
+                        }
+
+                        Cell {
+                            total: trow.width;
+                            h: trow.height;
+                            from: 0.13;
+                            span: 0.2;
+                            text: tag.pattern;
+                        }
+
+                        Cell {
+                            total: trow.width;
+                            h: trow.height;
+                            from: 0.38;
+                            span: 0.16;
+                            text: tag.matching;
+                        }
+
+                        Cell {
+                            total: trow.width;
+                            h: trow.height;
+                            from: 0.54;
+                            span: 0.19;
+                            text: tag.category;
+                        }
+
+                        Cell {
+                            total: trow.width;
+                            h: trow.height;
+                            from: 0.73;
+                            span: 0.17;
+                            text: tag.who;
+                        }
+
+                        IconButton {
+                            x: trow.width - 88px;
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.pencil;
+                            label: "Editar etiqueta: " + tag.name;
+                            clicked => {
+                                Backend.open-tag(tag.id);
+                            }
+                        }
+
+                        IconButton {
+                            x: trow.width - 48px;
+                            y: (parent.height - self.height) / 2;
+                            icon: Icons.trash;
+                            label: "Remover etiqueta: " + tag.name;
+                            clicked => {
+                                Backend.open-tag-remove(tag.id);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// --- Dialogs -------------------------------------------------------------------------------
+export component ChargeDialog inherits Modal {
+    title: "Registar quota";
+    close => {
+        Backend.close-dialog();
+    }
+
+    account := SelectField {
+        label: "Residente / fração";
+        model: Backend.account-options;
+    }
+
+    description := TextField {
+        label: "Descrição";
+        placeholder: "Ex.: Quota de julho";
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        due := TextField {
+            horizontal-stretch: 1;
+            label: "Vencimento";
+            placeholder: "dd/mm/aaaa";
+            text: Backend.today-text;
+        }
+
+        amount := TextField {
+            horizontal-stretch: 1;
+            label: "Montante (EUR)";
+            placeholder: "0,00";
+            accepted => {
+                Backend.create-charge(account.current-index, description.text, due.text, self.text);
+            }
+        }
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Registar quota";
+        submit => {
+            Backend.create-charge(account.current-index, description.text, due.text, amount.text);
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component ClassifyDialog inherits Modal {
+    title: "Classificar despesa";
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        category.current-index = Backend.classify-index;
+    }
+
+    VerticalLayout {
+        spacing: 2px;
+        Text {
+            text: Backend.classify-target.description;
+            font-size: 15px;
+            font-weight: 600;
+            color: Theme.text;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: Backend.classify-target.date + " · " + Backend.classify-target.amount;
+            font-size: 13px;
+            color: Theme.muted;
+        }
+    }
+
+    category := SelectField {
+        label: "Classificação";
+        placeholder-first: false;
+        model: Backend.expense-category-options;
+    }
+
+    remember := Checkbox {
+        text: "Memorizar nome";
+        checked: true;
+    }
+
+    Text {
+        text: "Com «Memorizar nome», as próximas importações classificam esta despesa automaticamente.";
+        font-size: 13px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Guardar classificação";
+        submit => {
+            Backend.classify(Backend.classify-target.id, category.current-index, remember.checked);
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component PaymentDialog inherits Modal {
+    title: "Associar pagamento";
+    card-width: 560px;
+    property <int> nonce: Backend.pay-nonce;
+    property <int> charge-index: 0;
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        who.current-index = Backend.pay-identity-index;
+    }
+    changed nonce => {
+        root.charge-index = 0;
+        who.current-index = Backend.pay-identity-index;
+    }
+
+    VerticalLayout {
+        spacing: 2px;
+        Text {
+            text: Backend.pay-target.description;
+            font-size: 15px;
+            font-weight: 600;
+            color: Theme.text;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: Backend.pay-target.date + " · " + Backend.pay-target.amount;
+            font-size: 13px;
+            color: Theme.muted;
+        }
+
+        Text {
+            text: "Por associar: " + Backend.pay-available;
+            font-size: 13px;
+            color: Theme.muted;
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 10px;
+        who := SelectField {
+            horizontal-stretch: 1;
+            label: "Residente / fração";
+            placeholder-first: false;
+            model: Backend.identity-options;
+        }
+
+        VerticalLayout {
+            alignment: end;
+            AppButton {
+                text: "Guardar residente";
+                icon: Icons.user-check;
+                clicked => {
+                    Backend.identify(Backend.pay-target.id, who.current-index, remember-name.checked);
+                }
+            }
+        }
+    }
+
+    remember-name := Checkbox {
+        text: "Memorizar nome";
+        checked: true;
+    }
+
+    for match in Backend.pay-matches: Rectangle {
+        height: 48px;
+        border-radius: Theme.radius;
+        background: Theme.surface-alt;
+        HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 8px;
+            spacing: 8px;
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: match.title;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: Theme.text;
+                    overflow: elide;
+                }
+
+                Text {
+                    text: match.detail;
+                    font-size: 12px;
+                    color: Theme.muted;
+                    overflow: elide;
+                }
+            }
+
+            VerticalLayout {
+                alignment: center;
+                IconButton {
+                    icon: Icons.undo;
+                    label: "Remover associação: " + match.title;
+                    clicked => {
+                        Backend.unallocate(match.id);
+                    }
+                }
+            }
+        }
+    }
+
+    if Backend.pay-can-allocate: VerticalLayout {
+        spacing: 12px;
+        SelectField {
+            label: "Quota";
+            current-index <=> root.charge-index;
+            model: Backend.pay-charge-options;
+            selected(index) => {
+                Backend.pay-pick-charge(index);
+            }
+        }
+
+        TextField {
+            label: "Montante (EUR)";
+            text <=> Backend.pay-amount;
+        }
+
+        remember-resident := Checkbox {
+            text: "Memorizar nome do residente";
+            checked: true;
+        }
+
+        if Backend.form-error != "": InlineError {
+            text: Backend.form-error;
+        }
+        FormActions {
+            submit-text: "Associar";
+            cancel-text: "Fechar";
+            submit => {
+                Backend.allocate(Backend.pay-target.id, root.charge-index, Backend.pay-amount, remember-resident.checked);
+            }
+            cancel => {
+                Backend.close-dialog();
+            }
+        }
+    }
+    if !Backend.pay-can-allocate: VerticalLayout {
+        spacing: 12px;
+        if Backend.form-error != "": InlineError {
+            text: Backend.form-error;
+        }
+        FormActions {
+            submit-text: "Fechar";
+            cancel-text: "Fechar";
+            submit => {
+                Backend.close-dialog();
+            }
+            cancel => {
+                Backend.close-dialog();
+            }
+        }
+    }
+}
+
+export component TagDialog inherits Modal {
+    title: Backend.tag-draft.id < 0 ? "Nova etiqueta" : "Editar etiqueta";
+    property <int> account-index: 0;
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        name.text = Backend.tag-draft.name;
+        pattern.text = Backend.tag-draft.pattern;
+        matching.current-index = Backend.tag-draft.match-index;
+        category.current-index = Backend.tag-draft.category-index;
+        root.account-index = Backend.tag-draft.account-index;
+        name.focus-field();
+    }
+
+    name := TextField {
+        label: "Etiqueta";
+        placeholder: "Ex.: Eletricidade";
+    }
+
+    pattern := TextField {
+        label: "Nome no extrato";
+        placeholder: "Como aparece na descrição do banco";
+    }
+
+    matching := SelectField {
+        label: "Correspondência";
+        placeholder-first: false;
+        model: ["Descrição completa", "Contém nome"];
+    }
+
+    category := SelectField {
+        label: "Classificação";
+        placeholder-first: false;
+        model: ["Recorrente", "Extraordinária", "Pagamento de residente"];
+    }
+
+    if category.current-index == 2: SelectField {
+        label: "Residente / fração";
+        current-index <=> root.account-index;
+        model: Backend.account-options;
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Guardar etiqueta";
+        submit => {
+            Backend.save-tag(Backend.tag-draft.id, name.text, pattern.text, matching.current-index, category.current-index, category.current-index == 2 ? root.account-index : 0);
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component TagRemoveDialog inherits Modal {
+    title: "Remover etiqueta";
+    close => {
+        Backend.close-dialog();
+    }
+
+    Text {
+        text: Backend.tag-remove-name;
+        font-size: 15px;
+        font-weight: 600;
+        color: Theme.text;
+        wrap: word-wrap;
+    }
+
+    Text {
+        text: "Os movimentos que já foram classificados com esta etiqueta mantêm a classificação.";
+        font-size: 14px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Remover";
+        submit => {
+            Backend.confirm-tag-remove(Backend.tag-remove-id);
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component ReportDialog inherits Modal {
+    title: "Resumo financeiro";
+    card-width: 760px;
+    close => {
+        Backend.close-dialog();
+    }
+
+    Text {
+        text: Backend.report-heading;
+        font-size: 15px;
+        font-weight: 600;
+        color: Theme.text;
+        wrap: word-wrap;
+    }
+
+    Text {
+        text: Backend.report-scope;
+        font-size: 13px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
+    ScrollView {
+        height: 300px;
+        content-height: sections.preferred-height;
+        sections := VerticalLayout {
+            spacing: 14px;
+            padding-right: 8px;
+            for section in Backend.report-sections: VerticalLayout {
+                spacing: 4px;
+                Text {
+                    text: section.title;
+                    font-size: 14px;
+                    font-weight: 600;
+                    color: Theme.text;
+                }
+
+                Text {
+                    text: section.body;
+                    font-size: 13px;
+                    color: Theme.muted;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Copiar para Word";
+        cancel-text: "Fechar";
+        submit => {
+            Backend.copy-report();
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}

@@ -22,6 +22,9 @@ databases, billing, IAM, or TLS certificates. No cloud resources have been creat
 | `TRUST_PROXY`                                      | Optional trusted proxy CIDR or named range supported by proxy-addr; unset trusts no forwarding headers          |
 | `AUDIT_LOG_DIR`                                    | Optional audit log directory (absolute, or relative to the app root); default `/app/tmp/audit`                  |
 | `AUDIT_LOG_MAX_BYTES`                              | Optional size of each sealed audit log file; default `1048576` (1 MiB), minimum `4096`                          |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`            | Optional SMTP relay for `node ace send:emails`; port default `587`, `SMTP_SECURE=true` for implicit TLS (465)   |
+| `SMTP_USER`, `SMTP_PASSWORD`                       | Optional relay credentials, supplied through your secret manager                                                |
+| `MAIL_FROM`                                        | Sender address; with `SMTP_HOST` it enables sending (`send:emails` exits with an error when either is unset)    |
 
 The image includes static assets and production dependencies, runs as UID/GID 1000,
 logs to stdout/stderr, and handles SIGTERM through AdonisJS. It contains no `.env` files
@@ -91,14 +94,15 @@ setup. Do not combine it with `compose.yaml`: the latter runs a database on the 
 The cloud stack has no database service or database volume and never builds images.
 The existing local-database and smoke stacks remain unchanged.
 
-Install Docker Engine and Compose, copy `compose.cloud.yaml` and `Caddyfile` to a
-stable directory on the VM, and prepare `.env.cloud` from `.env.cloud.example`.
-Set `APP_IMAGE` to the published `ghcr.io/roldao-enes/my-condo@sha256:...` digest.
+Install Docker Engine and Compose, copy `compose.cloud.yaml`, `Caddyfile`, and
+`deploy/upcloud-release.sh` to a stable directory on the VM, and prepare
+`.env.cloud` from `.env.cloud.example`.
 Supply a stable `APP_KEY`, the VM's public IPv4 address as `APP_DOMAIN` prefixed
 with `http://` for temporary IP-based access, and managed database connection
 details, including the provider's actual port. This is unencrypted HTTP; register
 a domain and configure DNS before using the deployment for sensitive data or
-production. Restrict the environment file to its owner (`chmod 600 .env.cloud`).
+production. Restrict the environment file to its owner (`chmod 600 .env.cloud`)
+and make the helper executable (`chmod +x upcloud-release.sh`) once.
 Authenticate Docker to GHCR with read-only package credentials if needed.
 
 Configure managed PostgreSQL to accept connections from the VM, preferably over private
@@ -107,22 +111,29 @@ private network. Use the certificate's hostname for `DB_HOST`; set `DB_SSL_CA` t
 provider CA PEM if needed (literal `\n` sequences are accepted). Do not disable TLS to
 work around a certificate error.
 
-From that directory, validate configuration without printing secrets, pull the image,
-then migrate and start the services. Stop if any command fails:
+For manual releases, take a database backup, then pass the published immutable
+digest to the helper:
 
 ```sh
-docker compose -f compose.cloud.yaml --env-file .env.cloud config --quiet &&
-docker compose -f compose.cloud.yaml --env-file .env.cloud --profile tools pull &&
-docker compose -f compose.cloud.yaml --env-file .env.cloud run --rm migrate &&
-docker compose -f compose.cloud.yaml --env-file .env.cloud up -d --wait --wait-timeout 180
+./upcloud-release.sh ghcr.io/roldao-enes/my-condo@sha256:<actual-digest>
 ```
 
-Migrations are an explicit one-shot command, not part of app startup. The migration
-service uses the `tools` profile so a VM restart or normal `up` does not rerun it.
-Use the same sequence for each release after changing `APP_IMAGE` to the new digest;
-take a database backup first and serialize deployments. A failed migration leaves the
-old app running during an upgrade; use backward-compatible migrations. This single-VM
-setup does not promise zero-downtime deployments.
+The helper validates and pulls the digest, runs the one-shot migration, waits for
+app readiness, updates `.env.cloud` on success, and records the previous successful
+digest for rollback, so there is no need to edit `APP_IMAGE` manually. Migrations
+do not run on normal app startup. If any deployment command fails, it stops without
+updating `.env.cloud`. Serialize deployments and use backward-compatible migrations;
+this single-VM setup does not promise zero-downtime deployments. See
+[UpCloud Onboarding](upcloud-onboarding.md) for the full release and recovery
+procedure.
+
+To deploy automatically after merges to `main`, configure a protected GitHub
+`production` environment with required reviewers and SSH credentials. The
+workflow waits for CI and its production-container smoke test, publishes the
+image, then requires environment approval before deployment. It sends the
+published digest—not `latest`—to the VM's release helper. See
+[UpCloud Onboarding](upcloud-onboarding.md#5-configure-and-approve-automated-releases)
+for the required environment variables, secrets, and firewall setup.
 
 On the first deployment, create the administrator interactively:
 
@@ -324,8 +335,14 @@ resource limits, separate probes, no service-account token, and a read-only root
 - Use one release pipeline at a time; do not launch concurrent migration jobs.
 - Use provider backups/PITR, encrypted off-host backups, monitoring, restore drills, and
   secret rotation. A container image does not make the unfinished business features production-ready.
-- Future email workers must run the same image as separate long-lived workers/jobs, not an
-  in-process loop on a request-scaled serverless instance. No email worker exists yet.
+- Email is sent by `node ace send:emails`, a run-once command: it sends due jobs (default 50 per
+  run, `--limit` up to 1000), records every attempt, retries failures with backoff (5 min, 30 min,
+  3 h, 12 h; five attempts in total), then exits with status 1 if any job failed permanently.
+  Run it from the same image as a scheduled job (every 5-15 minutes), never as an in-process loop
+  on a request-scaled serverless instance. Concurrent runs are safe (rows are claimed with
+  `FOR UPDATE SKIP LOCKED`); delivery is at-least-once, so a run killed mid-send may repeat one
+  email after its 10-minute lease expires. Use an SMTP relay (Brevo, Resend, SES, ...), not a
+  residential IP. Compose: `docker compose --profile tools run --rm send-emails`.
 
 The ARM64 Docker image and disposable Compose stack were verified locally on 2026-10-28:
 all migrations succeeded, health probes and published-port access passed, compiled JS/CSS

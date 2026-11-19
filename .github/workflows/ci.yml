@@ -90,6 +90,8 @@ jobs:
     needs: container
     if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     permissions:
       contents: read
       packages: write
@@ -112,6 +114,7 @@ jobs:
             type=semver,pattern={{version}}
             type=raw,value=latest,enable={{is_default_branch}}
       - uses: docker/build-push-action@v6
+        id: build
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -122,6 +125,81 @@ jobs:
           sbom: true
           cache-from: type=gha,scope=container-release
           cache-to: type=gha,mode=max,scope=container-release
+
+  deploy:
+    needs: publish
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm this is still the latest main commit
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin main
+          latest_main="$(git rev-parse origin/main)"
+          if [ "$latest_main" != "$GITHUB_SHA" ]; then
+            printf 'This deployment is stale: main is now %s, not %s. Approve the latest run instead.\n' "$latest_main" "$GITHUB_SHA" >&2
+            exit 1
+          fi
+      - name: Validate deployment configuration
+        env:
+          DEPLOY_SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ vars.DEPLOY_SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          [ -n "$DEPLOY_SSH_HOST" ] || { printf 'Missing DEPLOY_SSH_HOST.\n' >&2; exit 1; }
+          [ -n "$DEPLOY_SSH_USER" ] || { printf 'Missing DEPLOY_SSH_USER.\n' >&2; exit 1; }
+          [ -n "$DEPLOY_PATH" ] || { printf 'Missing DEPLOY_PATH.\n' >&2; exit 1; }
+          [ -n "$DEPLOY_SSH_PRIVATE_KEY" ] || { printf 'Missing DEPLOY_SSH_PRIVATE_KEY.\n' >&2; exit 1; }
+          [ -n "$DEPLOY_SSH_KNOWN_HOSTS" ] || { printf 'Missing DEPLOY_SSH_KNOWN_HOSTS.\n' >&2; exit 1; }
+          case "$DEPLOY_PATH" in
+            /*) ;;
+            *) printf 'DEPLOY_PATH must be an absolute path.\n' >&2; exit 1 ;;
+          esac
+          if [ "$DEPLOY_PATH" = "/" ]; then
+            printf 'DEPLOY_PATH cannot be the filesystem root.\n' >&2
+            exit 1
+          fi
+          case "$DEPLOY_PATH" in
+            *[!a-zA-Z0-9_./-]*|*..*)
+              printf 'DEPLOY_PATH may contain only letters, numbers, dots, underscores, slashes, and hyphens; ".." is not allowed.\n' >&2
+              exit 1
+              ;;
+          esac
+      - name: Configure SSH
+        env:
+          DEPLOY_SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_PRIVATE_KEY }}
+          DEPLOY_SSH_KNOWN_HOSTS: ${{ secrets.DEPLOY_SSH_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d "$HOME/.ssh"
+          printf '%s\n' "$DEPLOY_SSH_PRIVATE_KEY" > "$HOME/.ssh/deploy_key"
+          printf '%s\n' "$DEPLOY_SSH_KNOWN_HOSTS" > "$HOME/.ssh/known_hosts"
+          chmod 600 "$HOME/.ssh/deploy_key" "$HOME/.ssh/known_hosts"
+      - name: Copy deployment files and deploy the published image
+        env:
+          DEPLOY_SSH_HOST: ${{ vars.DEPLOY_SSH_HOST }}
+          DEPLOY_SSH_USER: ${{ vars.DEPLOY_SSH_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          IMAGE: ghcr.io/${{ github.repository }}@${{ needs.publish.outputs.digest }}
+        run: |
+          set -euo pipefail
+          target="${DEPLOY_SSH_USER}@${DEPLOY_SSH_HOST}"
+          ssh_options=(-i "$HOME/.ssh/deploy_key" -o BatchMode=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts")
+          ssh "${ssh_options[@]}" "$target" "mkdir -p -- '$DEPLOY_PATH'"
+          scp "${ssh_options[@]}" compose.cloud.yaml Caddyfile deploy/upcloud-release.sh "$target:$DEPLOY_PATH/"
+          printf -v remote_command 'cd %q && chmod 700 upcloud-release.sh && ./upcloud-release.sh %q' "$DEPLOY_PATH" "$IMAGE"
+          ssh "${ssh_options[@]}" "$target" "$remote_command"
 
   release:
     needs: publish

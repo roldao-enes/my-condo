@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Meu Condomínio
+GenericName=Gestão de condomínio
+Comment=Administração de um condomínio: residentes, finanças e comunicados
+Exec=meu-condominio
+Icon=meu-condominio
+Terminal=false
+Categories=Office;Finance;
+Keywords=condomínio;residentes;finanças;

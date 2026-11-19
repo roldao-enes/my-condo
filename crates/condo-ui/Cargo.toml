@@ -1,0 +1,38 @@
+[package]
+name = "condo-ui"
+version = "0.1.0"
+description = "Meu Condominio: the desktop application (Slint UI over the condo-* crates)"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+build = "build.rs"
+
+[[bin]]
+name = "meu-condominio"
+path = "src/main.rs"
+
+# Slint's generated code contains `unsafe`, so this crate cannot inherit the workspace's
+# `forbid(unsafe_code)`. `deny` still stops hand-written unsafe code from sneaking in.
+[lints.rust]
+unsafe_code = "deny"
+
+[dependencies]
+condo-core = { path = "../condo-core" }
+condo-audit = { path = "../condo-audit" }
+condo-db = { path = "../condo-db" }
+condo-mail = { path = "../condo-mail" }
+condo-app = { path = "../condo-app" }
+chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
+slint = { version = "1.19.0", default-features = false, features = ["accessibility", "backend-winit", "compat-1-2", "renderer-femtovg", "renderer-software", "software-renderer-systemfonts", "std"] }
+rfd = "0.18.0"
+thiserror = "2"
+arboard = { version = "3.7.0", features = ["wayland-data-control"] }
+
+[build-dependencies]
+slint-build = "1.19.0"
+
+[dev-dependencies]
+i-slint-backend-testing = { version = "1.19.0", features = ["renderer-software"] }
+png = "0.18.1"
+tempfile = "3.27.0"
