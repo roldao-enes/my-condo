@@ -9,6 +9,8 @@ pub trait FileDialogs {
     fn open_backup(&self) -> Option<PathBuf>;
     /// Which bank statement to import; `None` if the person cancelled.
     fn open_statement(&self) -> Option<PathBuf>;
+    /// Where to write the annual financial report (HTML); `None` if the person cancelled.
+    fn save_report(&self, suggested_name: &str) -> Option<PathBuf>;
     /// The folder to write the per-year export into; `None` if the person cancelled.
     fn pick_export_dir(&self) -> Option<PathBuf>;
     /// The export files to import (the base file and any year files); empty if cancelled.
@@ -56,6 +58,14 @@ impl FileDialogs for NativeDialogs {
             .set_title("Escolher extrato bancário")
             .add_filter("Extrato bancário", &["csv", "tsv", "txt"])
             .pick_file()
+    }
+
+    fn save_report(&self, suggested_name: &str) -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .set_title("Guardar relatório financeiro")
+            .set_file_name(suggested_name)
+            .add_filter("Página web (HTML)", &["html"])
+            .save_file()
     }
 
     fn pick_export_dir(&self) -> Option<PathBuf> {

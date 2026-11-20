@@ -296,6 +296,24 @@ fn importing_classifying_charging_and_matching_payments() {
     assert!(copied[0].0.contains("<table"), "html tables");
     assert!(copied[0].1.contains("Situação financeira do condomínio"));
 
+    // --- The annual report: saved as a standalone HTML page for the current year.
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("relatorio.html");
+    h.click("Relatório anual");
+    assert!(!target.exists(), "cancelling the dialog writes nothing");
+    *script.report.borrow_mut() = Some(target.clone());
+    h.click("Relatório anual");
+    assert!(h.notice().starts_with("Relatório de "), "{}", h.notice());
+    let html = std::fs::read_to_string(&target).unwrap();
+    assert!(html.starts_with("<!DOCTYPE html>"));
+    assert!(html.contains("Relatório financeiro do condomínio - "));
+    assert!(html.contains("<table"));
+    *script.report.borrow_mut() = Some(dir.path().join("missing").join("x.html"));
+    h.click("Relatório anual");
+    assert!(h
+        .notice()
+        .starts_with("Não foi possível guardar o relatório"));
+
     // --- Everything was audited.
     let log = h.audit_log();
     for event in [
@@ -308,6 +326,7 @@ fn importing_classifying_charging_and_matching_payments() {
         "finance.tag.create",
         "finance.tag.delete",
         "finance.report.copy",
+        "finance.report.export",
     ] {
         assert!(log.contains(event), "audit log lacks {event}");
     }

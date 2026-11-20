@@ -3,10 +3,14 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use chrono::Datelike;
 use condo_app::audit::quote;
+use condo_audit::AuditFailure;
 use condo_core::balances::finance_balances;
 use condo_core::locale::{amount_input, date, money, parse_input_date};
-use condo_core::report::{financial_report, report_clipboard, ExpenseCategory};
+use condo_core::report::{
+    annual_report, financial_report, report_clipboard, report_document, ExpenseCategory,
+};
 use condo_core::statement::parse_money;
 use condo_core::tags::{MatchType, TagCategory};
 use condo_db::finance::{self, NewCharge, TagInput};
@@ -783,6 +787,59 @@ impl Controller {
         self.open_dialog(ui, "report");
     }
 
+    /// Saves the report for the current year as a standalone HTML page.
+    pub fn export_report(&mut self, ui: &AppWindow) {
+        let Some(data) = self.finance.as_ref() else {
+            return;
+        };
+        let (today, year) = (self.today(), self.today().year());
+        let transactions: Vec<_> = data
+            .transactions
+            .iter()
+            .map(|t| t.to_bank_transaction())
+            .collect();
+        let report = annual_report(&transactions, &data.charges, &data.payments, year, today);
+        let html = report_document(&report, today);
+
+        let Some(destination) = self
+            .dialogs
+            .save_report(&format!("relatorio-financeiro-{year}.html"))
+        else {
+            return;
+        };
+        let actor = self.actor();
+        let where_to = quote(&destination.display().to_string(), 300);
+        match std::fs::write(&destination, html) {
+            Ok(()) => {
+                self.trail.succeeded(
+                    "finance.report.export",
+                    &actor,
+                    &format!("saved the {year} financial report to {where_to}"),
+                    None,
+                );
+                self.notice(ui, "success", &format!("Relatório de {year} guardado."));
+            }
+            Err(error) => {
+                self.trail.failed(
+                    "finance.report.export",
+                    &actor,
+                    &format!("save the {year} financial report to {where_to}"),
+                    AuditFailure {
+                        kind: "write_failed".to_owned(),
+                        reason: error.to_string(),
+                        status: None,
+                    },
+                    None,
+                );
+                self.notice(
+                    ui,
+                    "error",
+                    "Não foi possível guardar o relatório. Verifique a pasta escolhida e tente novamente.",
+                );
+            }
+        }
+    }
+
     pub fn copy_report(&mut self, ui: &AppWindow) {
         let Some(report) = self.build_report() else {
             return;
@@ -869,4 +926,5 @@ pub fn attach(ui: &AppWindow, controller: &Rc<RefCell<Controller>>) {
         .confirm_tag_remove(&ui, id));
     on!(on_open_report, |c, ui| c.open_report(&ui));
     on!(on_copy_report, |c, ui| c.copy_report(&ui));
+    on!(on_export_report, |c, ui| c.export_report(&ui));
 }
