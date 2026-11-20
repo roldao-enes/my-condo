@@ -5,7 +5,7 @@ members = ["crates/condo-core", "crates/condo-audit", "crates/condo-db", "crates
 [workspace.package]
 edition = "2021"
 rust-version = "1.95"
-license = "UNLICENSED"
+license = "GPL-3.0-or-later"
 publish = false
 
 [workspace.lints.rust]
