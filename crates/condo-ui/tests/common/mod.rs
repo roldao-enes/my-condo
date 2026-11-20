@@ -246,6 +246,8 @@ pub struct Script {
     pub save: RefCell<Option<PathBuf>>,
     pub open: RefCell<Option<PathBuf>>,
     pub statement: RefCell<Option<PathBuf>>,
+    pub export_dir: RefCell<Option<PathBuf>>,
+    pub exports: RefCell<Vec<PathBuf>>,
     /// What was put on the clipboard: (html, text).
     pub copied: RefCell<Vec<(String, String)>>,
     pub clipboard_fails: std::cell::Cell<bool>,
@@ -262,6 +264,12 @@ impl condo_ui::files::FileDialogs for Scripted {
     }
     fn open_statement(&self) -> Option<PathBuf> {
         self.0.statement.borrow_mut().take()
+    }
+    fn pick_export_dir(&self) -> Option<PathBuf> {
+        self.0.export_dir.borrow_mut().take()
+    }
+    fn open_exports(&self) -> Vec<PathBuf> {
+        std::mem::take(&mut *self.0.exports.borrow_mut())
     }
 }
 

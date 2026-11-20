@@ -9,6 +9,10 @@ pub trait FileDialogs {
     fn open_backup(&self) -> Option<PathBuf>;
     /// Which bank statement to import; `None` if the person cancelled.
     fn open_statement(&self) -> Option<PathBuf>;
+    /// The folder to write the per-year export into; `None` if the person cancelled.
+    fn pick_export_dir(&self) -> Option<PathBuf>;
+    /// The export files to import (the base file and any year files); empty if cancelled.
+    fn open_exports(&self) -> Vec<PathBuf>;
 }
 
 /// Putting a report where the person can paste it into Word.
@@ -52,5 +56,19 @@ impl FileDialogs for NativeDialogs {
             .set_title("Escolher extrato bancário")
             .add_filter("Extrato bancário", &["csv", "tsv", "txt"])
             .pick_file()
+    }
+
+    fn pick_export_dir(&self) -> Option<PathBuf> {
+        rfd::FileDialog::new()
+            .set_title("Escolher a pasta para exportar os dados")
+            .pick_folder()
+    }
+
+    fn open_exports(&self) -> Vec<PathBuf> {
+        rfd::FileDialog::new()
+            .set_title("Escolher os ficheiros a importar (o ficheiro base e os anos)")
+            .add_filter("Dados exportados", &["json"])
+            .pick_files()
+            .unwrap_or_default()
     }
 }

@@ -189,7 +189,7 @@ export global Backend {
     in property <string> today-text;
 
     // "announcement" (page): one announcement. Dialogs also: "new-announcement" | "queue-confirm"
-    // "" | "unit" | "onboard" | "offboard" | "detail" | "restore"
+    // "" | "unit" | "onboard" | "offboard" | "detail" | "restore" | "import"
     in-out property <string> dialog;
     in property <int> detail-unit-id;
     in property <string> detail-title;
@@ -210,6 +210,8 @@ export global Backend {
     in property <bool> can-load-demo;
     // What the chosen backup contains, shown before restoring it.
     in property <string> restore-summary;
+    // What the chosen export files contain, shown before importing them.
+    in property <string> import-summary;
 
     // host, port, secure (implicit TLS), user, password, from
     callback save-smtp(string, string, bool, string, string, string);
@@ -217,6 +219,9 @@ export global Backend {
     callback export-backup();
     callback choose-restore();
     callback confirm-restore();
+    callback export-data();
+    callback choose-import();
+    callback confirm-import();
     callback load-demo();
 
     // --- Finances -------------------------------------------------------------------------

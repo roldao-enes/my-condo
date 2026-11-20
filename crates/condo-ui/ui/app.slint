@@ -6,7 +6,7 @@ import { Theme } from "theme.slint";
 import { Backend } from "state.slint";
 import { LoginScreen, SetupScreen } from "auth.slint";
 import { Shell } from "shell.slint";
-import { SettingsPage, RestoreDialog } from "settings.slint";
+import { SettingsPage, RestoreDialog, ImportDialog } from "settings.slint";
 import { AnnouncementsPage, AnnouncementPage, NewAnnouncementDialog, QueueConfirmDialog } from "announcements.slint";
 import { FinancesPage, ChargeDialog, ClassifyDialog, PaymentDialog, TagDialog, TagRemoveDialog, ReportDialog } from "finances.slint";
 import { OverviewPage, UnitsPage, ResidentsPage, UnitDialog, OnboardDialog, OffboardDialog, DetailDialog } from "residency.slint";
@@ -85,6 +85,11 @@ export component AppWindow inherits Window {
     }
 
     if Backend.screen == "main" && Backend.dialog == "restore": RestoreDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "import": ImportDialog {
         width: parent.width;
         height: parent.height;
     }
