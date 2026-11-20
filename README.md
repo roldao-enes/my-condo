@@ -1,313 +1,153 @@
-# AdonisJS Inertia Starter Kit
+# Meu Condomínio
 
-This repo contains an AdonisJS application tailored for building an Inertia powered application using your favorite frontend framework. ( React, Vue, Solid.js, Svelte )
+A native desktop application for administering a single condominium in Portugal. It runs
+entirely on your own computer: no server, no database to install, no account, no browser. All data
+lives in one SQLite file in your user folder.
 
-# Meu Condominio
+The interface is in Portuguese (pt-PT), amounts are in EUR, and dates default to the
+Europe/Lisbon time zone.
 
-A self-hosted, single-condominium administration application for Portugal.
-TypeScript throughout: AdonisJS v6, React, Inertia, and PostgreSQL.
+> **Status:** the Rust rewrite is feature-complete for residency, finances, announcements and
+> settings. Packages build locally on macOS and Ubuntu/Debian; Windows and Linux have not yet been
+> run on real machines. Not implemented yet: code signing/notarisation, a Windows installer,
+> "send test email", change password and add administrator. See
+> [docs/rust-migration-handoff.md](docs/rust-migration-handoff.md) for details.
+>
+> The finance features are a management aid, not a certified accounting or statutory-notice system.
 
-## Implemented
+## Features
 
-- Administrator-only session authentication; no public registration.
-- CSRF protection, password hashing, login throttling, and secure production cookies.
-- Unit creation and searchable unit/resident directories.
-- Onboarding new people or associating an existing person with another unit.
-- Owner, tenant, and occupant relationships with calendar dates.
-- Offboarding that preserves the person, unit, relationship, and audit history.
-- Transactional audit records and database constraints for duplicate active relationships.
-- Responsive overview, unit details, active residents, and historical relationships.
-- Portuguese date formatting, a Europe/Lisbon default, and EUR as the planned accounting currency.
-- Bank statement upload, duplicate-safe imports, expense classification, and a finance dashboard.
-- Resident quotas, partial payment matching, overdue balances, and audited match reversals.
-- Email announcements to residents: drafts, a recipient snapshot taken when queued, and a
-  run-once sender (`node ace send:emails`) with retry history. See [Email](#email).
+**Access**
+- First-run setup that creates the administrator; no public registration.
+- Password login (Argon2) with login throttling and audited sign-ins.
 
-Email invitations, MFA, and retention automation are not implemented yet.
-The finance dashboard is a management aid, not a certified accounting or statutory-notice system.
+**Residency**
+- Units, residents and a searchable directory.
+- Owner, tenant and occupant relationships with start and end dates.
+- Onboard a new person, or link an existing person to another unit.
+- Offboarding keeps the person, unit, relationship and history intact.
+- Overview, unit details, active residents and historical relationships.
 
-### Finances
+**Finances**
+- Bank statement import (Portuguese number formats such as `1.234,56`), safe against duplicates.
+- Expense classification as unclassified, recurring or extraordinary, driven by a name registry of
+  exact and "contains" tags (accent- and case-insensitive).
+- Resident quotas (charges), payment matching including partial payments, overdue balances and
+  reversible matches.
+- Finance dashboard and a financial report you can copy to the clipboard for pasting into Word.
 
-After running migrations, administrators can open **Financas** in the sidebar and upload
-a UTF-8 bank statement (up to 2 MB / 10,000 movements). Tab, semicolon, and comma delimiters
-are supported, with optional headers and standard CSV quoting. Columns must appear in this order:
+**Announcements (Comunicados)**
+- Drafts, with a recipient snapshot taken when an announcement is queued.
+- SMTP email delivery through a queue with retries and per-attempt history.
 
-```text
-date          value date    description                  amount    balance
-2025-01-03    2025-01-03    COMISSAO MANUTENCAO DE CONTA   -7,50     4.922,11
-```
+**Data safety**
+- Every change runs in one transaction together with its audit row.
+- Append-only JSON Lines audit log, rotated by size.
+- Backup and restore of the database (consistent snapshots, written atomically).
+- Export and import of all data as JSON: one base file (users, settings, units, residents,
+  occupancies, tags) plus one file per year (movements, charges, payments, announcements, email
+  jobs, audit events). Import is validated in a scratch database first, saves a safety copy, then
+  replaces everything in a single transaction.
+- Demo data loader for trying the app on an empty database.
 
-Use ISO dates (`YYYY-MM-DD`) or `DD/MM/YYYY`. Amounts may use Portuguese decimal commas
-and thousands separators, or decimal points without thousands separators. Quote decimal-comma
-values in comma-delimited CSV. Negative amounts are expenses; positive amounts are income.
-All amounts are stored as integer EUR cents. The entire file is validated before any writes;
-invalid imports leave no partial transactions. Original uploaded files are not retained.
-Reimporting the same movements, including overlapping statements, skips duplicates using all
-five normalized fields and an occurrence counter, preserving existing classifications and matches.
-Corrected bank records with different fields are distinct movements and require review.
+## Tech stack
 
-Classify expenses as recurring or extraordinary. With **Memorizar nome** enabled (the default),
-the bank description is saved in **Etiquetas** and future matching imports are classified
-automatically. Matching ignores case, accents, punctuation, and repeated whitespace, but does
-not guess spelling variations. Tags have editable labels, classifications, and match patterns:
-**Descricao completa** matches the entire normalized bank description; **Contem nome** matches
-a complete name/phrase within it, allowing changing bank references. Exact matches take priority;
-more specific contained names take priority over their shorter forms. Multiple unrelated matching
-names are ambiguous and leave the transaction unclassified. Expenses and incoming resident payments
-are matched separately. New movements without a matching tag remain unclassified.
+| Area | Choice |
+|---|---|
+| Language | Rust 2021 edition, MSRV **1.95**, `unsafe` forbidden (denied in the UI crate) |
+| UI | [Slint](https://slint.dev) 1.19 (native, no web view), winit backend, FemtoVG and software renderers |
+| Database | SQLite through `rusqlite` (bundled, so no system SQLite needed) |
+| Password hashing | `argon2` |
+| Email | `lettre` with rustls (SMTP) |
+| Dates and time zones | `chrono`, `chrono-tz` |
+| Statements and text | `csv`, `unicode-normalization` |
+| Serialization | `serde`, `serde_json` |
+| Errors | `thiserror` |
+| Desktop integration | `rfd` (file dialogs), `arboard` (clipboard), `directories` (data paths) |
+| Typography and icons | Bundled DM Sans font, Lucide icons |
+| Tests | `cargo test`, Slint's testing backend for UI flows, golden-file report test |
 
-Identifying an incoming resident payment, or matching it to a quota with name learning enabled,
-saves the resident/unit identity for future statements. Recognition displays the resident and
-prioritizes their unpaid quotas but does **not** allocate funds or reduce debt automatically.
-Disable name learning for shared deposits or single-transaction exceptions. Identifications can
-be corrected or cleared independently of payment allocations. Existing unambiguous expense
-classifications and resident payment matches seed the registry when the migration runs.
-Editing/deleting tags affects future imports only; existing expense classifications, resident
-identities, and payment allocations remain unchanged. Deleting a tag removes its displayed
-label from historical transactions. Reimporting duplicates never reapplies new rules to them.
-
-The period selector scopes bank movements and expense totals. Bank balance is always the latest
-imported statement balance, not a reconstructed current balance or a sum of imported balances.
-Import statements from one bank account only; multi-account consolidation is not supported.
-
-Register quotas against an explicit resident/unit relationship, then associate incoming bank
-payments with those quotas. Payments can be partial or split across quotas and cannot exceed
-either the available deposit or the unpaid quota. Matches can be removed with an audit trail.
-Unmatched deposits do not reduce resident debt. Outstanding and overdue debt use all recorded
-quotas, independently of the bank period filter; quotas due before today in Europe/Lisbon are
-overdue. Record opening debt as dated quotas when starting with historical balances. Quotas
-are entered manually, not automatically generated each month. Historical debt stays assigned
-to the original resident even after offboarding. Charges are not editable in this milestone;
-verify the resident, amount, and due date before submitting.
-
-### Financial Summary and Word Export
-
-Open **Resumo financeiro** for a dated summary of the condominium's recorded finances, then
-select **Copiar para Word**. The clipboard contains HTML tables and a plain-text alternative;
-Word can paste the HTML as editable tables (use source formatting when choosing paste options).
-If the browser cannot write rich clipboard data, the button falls back to tab-separated text
-and reports that fallback. Clipboard access requires a supported browser on HTTPS or localhost
-and may require permission. Failed copies show an error and can be retried.
-
-The preview and clipboard use the same report. It includes all imported movements dated on or
-before today in Europe/Lisbon, regardless of dashboard search, category, or month filters:
-bank balance with its statement date, income/outgoings, expense categories and names/tags,
-recorded quotas, allocated/unallocated income, and outstanding/overdue balances per resident.
-Future-dated bank movements and their payment allocations are excluded; unpaid recorded quotas
-include future due dates, which are separated from overdue debt. The statement balance is not
-a live bank balance, and the report is limited to data recorded in the application.
-
-## Local Development
-
-Requires Node 24+, Yarn 1.22.22 (declared through Corepack), and PostgreSQL 15+.
-The current dependency graph needs Node 24 even though the framework starter is v6.
-
-```sh
-corepack enable
-yarn install --frozen-lockfile
-cp .env.example .env
-node ace generate:key
-```
-
-Set the `DB_*` values in `.env` for your local PostgreSQL instance. Create databases
-named `my_condo` and `my_condo_test`, owned by the configured database user.
-
-```sh
-node ace migration:run
-node ace create:admin
-yarn dev
-```
-
-Open http://127.0.0.1:3333. The administrator command securely prompts for a password
-of at least 12 characters. All provisioned users are administrators in this milestone.
-
-### Email
-
-Announcements are written in **Comunicados**. Queueing one takes a snapshot of the active
-residents that have an email address (optionally just one unit), so later changes do not alter
-who receives it. Nothing is sent by the web app itself: `node ace send:emails` sends whatever
-is due and exits, so it works from your PC today and as a scheduled job later. Jobs that are not
-sent yet simply wait in PostgreSQL until the next run. Failed sends are retried with backoff
-(5 min, 30 min, 3 h, 12 h) and then marked failed; each attempt is stored. Messages are plain text.
-
-Locally, the default `.env.example` points at [Mailpit](https://mailpit.axllent.org), a dev inbox
-that never delivers anything:
-
-```sh
-docker compose -f compose.dev.yaml up -d      # Mailpit inbox UI on http://127.0.0.1:8025
-node ace send:emails                           # --limit 50 by default, --dry-run to count
-```
-
-For real delivery set `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_SECURE`, and
-`MAIL_FROM` for an SMTP relay (Brevo, Resend, SES). Do not send straight from a home connection.
-Test with a throwaway recipient first: queued mail goes to real residents' addresses.
-
-### Optional Demo
-
-On an empty development database, instead of creating an administrator manually:
-
-```sh
-node ace db:seed --files=database/seeders/demo_seeder.ts
-```
-
-Demo login: `admin@example.test` / `DemoCondo2026!`.
-All residents are fictional. The seeder refuses non-development environments and nonempty
-databases. Never use these credentials with real data or a publicly accessible instance.
-
-The initial workspace also has an ignored local PostgreSQL cluster at `.local/postgres`,
-listening on `127.0.0.1:55432`. It is a disposable local convenience using loopback trust
-authentication, not a production configuration. With Homebrew PostgreSQL 15 installed:
-
-```sh
-/opt/homebrew/opt/postgresql@15/bin/postgres -D "$PWD/.local/postgres" -h 127.0.0.1 -p 55432 -k "$PWD/.local"
-```
-
-For this cluster, set `DB_HOST=127.0.0.1` and `DB_PORT=55432` in `.env`, then
-restart the development server. Check `http://127.0.0.1:3333/health/ready`:
-it must return HTTP 200 before testing login. The login rate limiter also uses
-the database when `LIMITER_STORE=database`, so a connection failure can return
-HTTP 500 before credential verification runs.
-
-If your active Node is older than 24, a scoped runtime works without changing your global Node:
-
-```sh
-npx --yes --package=node@24 --package=yarn@1.22.22 yarn dev
-```
-
-## Checks
-
-```sh
-yarn typecheck
-yarn lint
-yarn build
-yarn test
-```
-
-`yarn test` loads the tracked, nonsecret `.env.test` overrides before application boot.
-Other connection values and the application key come from `.env` or the environment.
-Tests refuse database names not ending in `_test`. Integration tests create and revert
-tables; use a dedicated disposable database, never a production copy you need to keep.
-
-Coverage includes invalid dates, departure-before-arrival, history preservation,
-duplicate active relationships, rollback, re-onboarding, anonymous access, CSRF,
-credential verification, and password exclusion from page payloads.
+Release builds use thin LTO and stripped symbols. On Windows the C runtime is linked statically, so
+the result is a single `.exe` with no Visual C++ Redistributable required.
 
 ## Architecture
 
-```text
-app/controllers/                HTTP / Inertia presentation
-app/residency/application/      Transactional lifecycle use cases
-app/residency/domain/           Framework-independent date rules
-app/residency/infrastructure/   PostgreSQL read queries
-app/finances/                  Statement parsing and transactional finance use cases
-app/audit/                     Size-rotated audit log files and failure classification
-app/models/user.ts             Framework authentication model
-inertia/                       React presentation
-database/migrations/           Constraints and schema
-```
+A Cargo workspace in [crates/](crates/). Dependencies point one way:
+`ui → app → mail → db → core`, and `db → audit`. Nothing below `condo-ui` knows about Slint.
 
-Business rules do not live in React. People and units are independent of their dated
-relationships. Ending a relationship never deletes its history. Database and audit writes
-are committed together. Future dates are rejected in the current immediate-action workflow;
-scheduled moves and overlapping historical-period validation are not implemented.
+| Crate | Responsibility |
+|---|---|
+| [condo-core](crates/condo-core) | Pure domain logic, no I/O: money as `i64` cents, pt-PT formatting and collation, statement parser, tag matching, balances, financial report, occupancy, recipient and retry rules, login throttle |
+| [condo-audit](crates/condo-audit) | Append-only, size-rotated JSON Lines audit log |
+| [condo-db](crates/condo-db) | SQLite schema, migrations and every transactional service (residency, finance, announcements, email queue, auth, settings, demo data) |
+| [condo-mail](crates/condo-mail) | SMTP transport, retrying queue runner, SMTP settings storage |
+| [condo-app](crates/condo-app) | Everything the UI calls except widgets: data paths, audit trail, backup/restore, JSON export/import, login, mailer |
+| [condo-ui](crates/condo-ui) | Slint screens (`ui/*.slint`), controllers, view models; produces the `meu-condominio` binary |
 
-### Audit Log Files
+## Getting started
 
-Every state-changing command (login, logout, unit creation, onboarding, offboarding, all
-finance mutations, and `node ace create:admin`) appends one JSON line per attempt, whether
-it succeeded or failed. Each line has a UTC `timestamp`, an `event` such as
-`residency.unit.create`, an `outcome` (`success` or `failure`), the `actor`, request
-context, and a readable `message`:
-
-```text
-User #3 (admin@example.test) created unit #12 "1A" on floor "1"
-User #3 (admin@example.test) failed to offboard occupancy #9 on 2025-02-01: conflict: Esta relacao ja foi encerrada.
-Anonymous visitor failed to log in as "x@example.test": invalid email or password
-```
-
-Failures also carry `failure.kind`: `invalid_input`, `invalid_credentials`, `not_found`,
-`conflict`, `rejected` (business rule), or `error` (unexpected; the request still fails).
-Passwords and statement contents are never logged.
-
-Entries are appended to `audit-current.log`. When the next entry would exceed
-`AUDIT_LOG_MAX_BYTES` (default 1 MiB), that file is sealed and renamed after its first and
-last entry timestamps, for example
-`audit-2026-10-28T13-57-32.314Z_2026-10-29T08-12-03.901Z.log`. Sealed files are therefore
-evenly sized (each within one entry of the limit) and sort chronologically by name. The
-directory defaults to `tmp/audit` and can be changed with `AUDIT_LOG_DIR`; tests use
-`tmp/test-audit`. Entries are also mirrored to the application log. A failure to write
-the audit file is logged as an error but does not block the operation.
-
-## Self-Hosting
-
-See [Portable Container Deployment](docs/deployment.md) for Cloud Run/Cloud SQL,
-ECS/Fargate/RDS, Kubernetes (GKE/EKS/AKS), multi-architecture images, and CI publishing.
-The same production image serves HTTP on `PORT` (default 8080) and accepts configuration
-through environment variables/secrets. It supports verified PostgreSQL TLS and separate
-`/health/live` and `/health/ready` probes. Run migrations as a release job, not on web startup.
-
-For the UpCloud VM with a separate managed PostgreSQL database, use the standalone
-`compose.cloud.yaml` and `.env.cloud.example`. Follow the
-[managed-database deployment steps](docs/deployment.md#upcloud-vm-with-managed-postgresql)
-to pull an image, run migrations, and start the app and HTTPS proxy. No PostgreSQL
-container runs on the VM in this configuration.
-
-The default `compose.yaml` stack uses local PostgreSQL, a non-root application container, a one-shot migration
-service, and Caddy for automatic HTTPS. Only ports 80/443 are published; PostgreSQL and
-the application are private to the container network. Docker Engine/Compose or a compatible
-FOSS container runtime can be used.
-
-Prepare `.env.production` using `.env.production.example`. Set a real domain, a strong
-database password, and a unique application key. `node ace generate:key --show` generates
-a key without changing the local environment file. Keep this key stable and back it up
-securely. The production environment file is ignored by Git and excluded from image builds.
+You need [Rust](https://rustup.rs) 1.95 or newer. On Linux, install the build libraries first with
+`./scripts/ci/linux-deps.sh`.
 
 ```sh
-docker compose --env-file .env.production up -d --build
-docker compose --env-file .env.production exec app node ace create:admin
+# Run the app on a throwaway data folder
+CONDO_DATA_DIR=/tmp/condo-try cargo run -p condo-ui
+
+# Checks, as run in CI
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
 ```
 
-DNS must point to the server and ports 80/443 must be reachable for public TLS issuance.
-Do not run the demo seeder. Back up the database before upgrades; migrations are not an
-automatic rollback strategy. The readiness endpoint is `/health`.
+The first build is slow because it compiles SQLite and Slint. UI tests write screenshots to
+`target/ui-screenshots/`, which are worth opening when you change a layout.
 
-### Backup and Restore Check
+The binary also works without opening a window:
 
 ```sh
-docker compose --env-file .env.production exec -T database pg_dump -U condo -Fc my_condo > condo.dump
-docker compose --env-file .env.production exec database createdb -U condo restore_check
-docker compose --env-file .env.production exec -T database pg_restore -U condo --no-owner -d restore_check < condo.dump
-docker compose --env-file .env.production exec database psql -U condo -d restore_check -c 'SELECT count(*) FROM units;'
+meu-condominio --version
+meu-condominio --self-check [folder]
 ```
 
-Restore verification targets a separate database. Encrypt backups, store them off-host,
-restrict access, and periodically rehearse a full recovery. These operational steps are
-documented but not automated or certified by this initial implementation.
+## Where your data lives
 
-## Dependencies and Assets
+| OS | Default location |
+|---|---|
+| Windows | `%LOCALAPPDATA%\MeuCondominio\data` |
+| macOS | `~/Library/Application Support/pt.MeuCondominio` |
+| Linux | `~/.local/share/meucondominio` |
 
-Runtime software dependencies are FOSS: AdonisJS, React, Inertia, Lucid, VineJS, Luxon,
-Lucide, and pg use MIT licenses; PostgreSQL uses the PostgreSQL License; Caddy uses
-Apache-2.0. DM Sans is bundled locally under SIL OFL 1.1. No font or script CDN is needed
-at runtime. Package versions are locked in `yarn.lock`.
+The folder holds the SQLite database, the audit log and backups. The **Definições** screen shows
+the exact path. Set `CONDO_DATA_DIR=/some/folder` to use another location, which also gives a
+portable mode (for example a folder on a USB stick).
 
-`jsonschema` is pinned to 1.4.1 because newer resolution breaks Ace v6 custom-command
-metadata validation. The limiter uses its v6-compatible 2.x major.
+## Packaging
 
-The decorative login photograph is bundled locally from
-https://images.unsplash.com/photo-1460317442991-0ec209397118 under the
-[Unsplash License](https://unsplash.com/license). It is an illustrative building, not a
-photograph of your condominium. It is not a software dependency or an OFL-licensed asset.
-The application itself remains private/unlicensed until its owner chooses a license.
+Everything is built locally and lands in `dist/` (git-ignored). Each script builds the release
+executable, runs `--self-check`, then packages it.
 
-## Next Milestones
+| For | Command | Result |
+|---|---|---|
+| macOS | `./scripts/package-macos.sh` | `.app`, `.zip`, `.dmg` (`UNIVERSAL=1` for Apple silicon and Intel) |
+| Ubuntu / Debian | `./scripts/package-linux.sh` | `.deb` |
+| Ubuntu / Debian via Docker | `./scripts/package-linux-docker.sh` | `.deb`, plus an install-and-launch test |
+| Windows (Git Bash) | `./scripts/build-release.sh` | single `meu-condominio.exe` |
 
-1. Extend finance tracking with charge corrections, recurring quota schedules, printable
-   statements, and a full immutable ledger. No automatic transfer of old debt to a buyer.
-2. Email invitations and automatic reminders (for example overdue quotas) on top of the
-   announcement queue, plus HTML templates. Offboarding already excludes ended relationships
-   from new mailings.
-3. Meeting notices and calendar invitations, including updates/cancellations and printable
-   alternatives. Verify Portuguese statutory-notice rules and consent requirements before use.
-4. MFA, recovery procedures, configurable condominium/timezone settings, privacy/retention
-   controls, and an audit-history viewer before real resident data is entrusted to the system.
+macOS builds are ad-hoc signed and not notarised: on a downloaded copy, right-click the app, then
+Open. Details are in [docs/packaging.md](docs/packaging.md).
+
+## Continuous integration
+
+[.github/workflows/desktop.yml](.github/workflows/desktop.yml) runs `fmt`, `clippy` and the tests
+on Ubuntu 22.04, Windows and macOS, then builds each platform's package with the same scripts and
+keeps it as a downloadable artifact of the run for 14 days. Nothing is published.
+
+## Legacy code
+
+The repository still contains the original AdonisJS, React and PostgreSQL web app (`app/`,
+`inertia/`, `config/`, and so on). It is kept as the behavioural reference until the cutover and is
+not documented here.
+
+## License
+
+Unlicensed (`publish = false`). All rights reserved.
