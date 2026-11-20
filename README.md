@@ -140,7 +140,9 @@ Open. Details are in [docs/packaging.md](docs/packaging.md).
 
 [.github/workflows/desktop.yml](.github/workflows/desktop.yml) runs `fmt`, `clippy` and the tests
 on Ubuntu 22.04, Windows and macOS, then builds each platform's package with the same scripts and
-keeps it as a downloadable artifact of the run for 14 days. Nothing is published.
+keeps it as a downloadable artifact of the run for 14 days. On every merge to `main`, once all checks
+and packages succeed, a GitHub release (`v<version>-build.<run>`) is created with the macOS, Linux
+and Windows packages attached. Nothing is deployed.
 
 ## Legacy code
 

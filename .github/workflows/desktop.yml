@@ -1,6 +1,6 @@
 # Meu Condominio desktop app: check on every OS, then package it for each OS with the same
-# scripts you can run locally (see docs/packaging.md). Nothing is published anywhere: the packages
-# are kept as downloadable artifacts of the run.
+# scripts you can run locally (see docs/packaging.md). On every push to main (a merge) the checks
+# run first, then the packages of all three OSs are attached to a new GitHub release.
 name: Desktop
 
 on:
@@ -102,3 +102,35 @@ jobs:
           path: ${{ matrix.files }}
           if-no-files-found: error
           retention-days: 14
+
+  release:
+    name: Release
+    needs: [check, package]
+    # Only when every check and every package succeeded, on a merge to main (or a pushed v* tag).
+    if: ${{ !cancelled() && needs.check.result == 'success' && needs.package.result == 'success' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: meu-condominio-*
+          path: artifacts
+          merge-multiple: false
+      - name: Create the release with the packages of all three OSs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            tag="$GITHUB_REF_NAME"
+            target_args=()
+          else
+            version="$(grep -m1 '^version' crates/condo-app/Cargo.toml | cut -d'"' -f2)"
+            tag="v${version}-build.${GITHUB_RUN_NUMBER}"
+            target_args=(--target "$GITHUB_SHA")
+          fi
+          mapfile -t files < <(find artifacts -type f | sort)
+          gh release create "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" "${target_args[@]}" \
+            --title "$tag" --generate-notes
