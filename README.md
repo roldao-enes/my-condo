@@ -145,4 +145,6 @@ and Windows packages attached. Nothing is deployed.
 
 ## License
 
-Unlicensed (`publish = false`). All rights reserved.
+Licensed under the [GNU General Public License v3.0 or later](LICENSE) (`GPL-3.0-or-later`).
+
+The UI is built with [Slint](https://slint.dev), used here under its GPL-3.0 option.
