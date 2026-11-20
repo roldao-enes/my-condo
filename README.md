@@ -34,6 +34,7 @@ Europe/Lisbon time zone.
 - Resident quotas (charges), payment matching including partial payments, overdue balances and
   reversible matches.
 - Finance dashboard and a financial report you can copy to the clipboard for pasting into Word.
+- Annual financial report for the current year, saved as a standalone HTML page that opens in a browser or in Word.
 
 **Announcements (Comunicados)**
 - Drafts, with a recipient snapshot taken when an announcement is queued.
@@ -145,4 +146,6 @@ and Windows packages attached. Nothing is deployed.
 
 ## License
 
-Unlicensed (`publish = false`). All rights reserved.
+Licensed under the [GNU General Public License v3.0 or later](LICENSE) (`GPL-3.0-or-later`).
+
+The UI is built with [Slint](https://slint.dev), used here under its GPL-3.0 option.

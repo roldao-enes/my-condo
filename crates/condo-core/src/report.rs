@@ -3,7 +3,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use chrono::NaiveDate;
+use chrono::{Datelike, NaiveDate};
 
 use crate::balances::{finance_balances, Charge, Payment};
 use crate::locale::{collate_pt, date, money};
@@ -67,6 +67,8 @@ pub struct ReportTable {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FinanceReport {
     pub as_of: NaiveDate,
+    /// Set for an annual report; `None` for the running summary.
+    pub year: Option<i32>,
     pub statement_date: Option<NaiveDate>,
     pub tables: Vec<ReportTable>,
 }
@@ -85,12 +87,55 @@ pub fn financial_report(
     payments: &[Payment],
     as_of: NaiveDate,
 ) -> FinanceReport {
-    // Newest first; ties broken by id so the latest import wins.
-    let mut recorded: Vec<&BankTransaction> =
-        transactions.iter().filter(|t| t.date <= as_of).collect();
-    recorded.sort_by(|a, b| b.date.cmp(&a.date).then(b.id.cmp(&a.id)));
+    build_report(transactions, charges, payments, None, as_of)
+}
 
-    let ids: HashSet<i64> = recorded.iter().map(|t| t.id).collect();
+/// The report for one calendar year: movements dated in `year` (up to `today`) and charges
+/// falling due in `year`. Payments count whichever year the bank movement is from, so a quota
+/// paid in advance last December is not shown as owed. The bank balance is the latest statement
+/// on or before the end of the period, even if it predates the year.
+pub fn annual_report(
+    transactions: &[BankTransaction],
+    charges: &[Charge],
+    payments: &[Payment],
+    year: i32,
+    today: NaiveDate,
+) -> FinanceReport {
+    let start = NaiveDate::from_ymd_opt(year, 1, 1).expect("valid year");
+    let end = NaiveDate::from_ymd_opt(year, 12, 31).expect("valid year");
+    let in_year: Vec<Charge> = charges
+        .iter()
+        .filter(|c| c.due_date >= start && c.due_date <= end)
+        .cloned()
+        .collect();
+    build_report(
+        transactions,
+        &in_year,
+        payments,
+        Some(start),
+        end.min(today),
+    )
+}
+
+fn build_report(
+    transactions: &[BankTransaction],
+    charges: &[Charge],
+    payments: &[Payment],
+    period_start: Option<NaiveDate>,
+    as_of: NaiveDate,
+) -> FinanceReport {
+    // Newest first; ties broken by id so the latest import wins.
+    let mut known: Vec<&BankTransaction> =
+        transactions.iter().filter(|t| t.date <= as_of).collect();
+    known.sort_by(|a, b| b.date.cmp(&a.date).then(b.id.cmp(&a.id)));
+    let latest = known.first().copied();
+    let ids: HashSet<i64> = known.iter().map(|t| t.id).collect();
+    let recorded: Vec<&BankTransaction> = known
+        .iter()
+        .copied()
+        .filter(|t| period_start.is_none_or(|start| t.date >= start))
+        .collect();
+
     let matched: Vec<Payment> = payments
         .iter()
         .filter(|p| ids.contains(&p.transaction_id))
@@ -103,7 +148,6 @@ pub fn financial_report(
     let paid: i64 = matched.iter().map(|p| p.amount).sum();
     let outstanding: i64 = balances.charges.iter().map(|c| c.outstanding).sum();
     let overdue: i64 = balances.charges.iter().map(|c| c.overdue).sum();
-    let latest = recorded.first();
 
     let row = |label: &str, value: String| vec![label.to_owned(), value];
     let totals = table(
@@ -192,6 +236,7 @@ pub fn financial_report(
 
     FinanceReport {
         as_of,
+        year: period_start.map(|start| start.year()),
         statement_date: latest.map(|t| t.date),
         tables: vec![totals, expense_table, names_table, debt_table],
     }
@@ -283,6 +328,73 @@ pub fn report_clipboard(report: &FinanceReport) -> ClipboardReport {
         html,
         text: sections.join("\n\n"),
     }
+}
+
+/// A complete, self-contained HTML page for the annual report: opens in any browser and in
+/// Word (inline styles and classic table attributes, no scripts, no external files).
+/// Every imported string is HTML-escaped.
+pub fn report_document(report: &FinanceReport, generated_on: NaiveDate) -> String {
+    let as_of = date(report.as_of);
+    let heading = match report.year {
+        Some(year) => format!("Relatório financeiro do condomínio - {year}"),
+        None => format!("Situação financeira do condomínio - {as_of}"),
+    };
+    let scope = match report.year {
+        Some(year) => format!(
+            "Movimentos bancários de 01/01/{year} a {as_of}. Quotas com vencimento em {year}."
+        ),
+        None => format!("Movimentos importados até {as_of}."),
+    };
+    let statement = match report.statement_date {
+        Some(day) => format!("Saldo bancário conforme extrato de {}.", date(day)),
+        None => "Sem extratos bancários importados.".to_owned(),
+    };
+    let cell = "border:1px solid #999;padding:6px 8px;text-align:left;vertical-align:top;";
+
+    let mut html = format!(
+        "<!DOCTYPE html>\n<html lang=\"pt-PT\">\n<head>\n<meta charset=\"utf-8\">\n\
+         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
+         <title>{title}</title>\n\
+         <style>body{{font-family:Calibri,Arial,sans-serif;color:#1f2933;max-width:900px;margin:2rem auto;padding:0 1rem;line-height:1.4}}\
+         h1{{font-size:1.6rem}}h2{{font-size:1.2rem;margin-top:1.8rem}}\
+         table{{border-collapse:collapse;width:100%}}\
+         td:last-child,th:last-child{{text-align:right}}\
+         .meta{{color:#52606d;font-size:.9rem}}</style>\n</head>\n<body>\n\
+         <h1>{title}</h1>\n<p>{scope}</p>\n<p>{statement}</p>\n",
+        title = escape_html(&heading),
+        scope = escape_html(&scope),
+        statement = escape_html(&statement),
+    );
+    for t in &report.tables {
+        html.push_str(&format!("<h2>{}</h2>\n", escape_html(&t.title)));
+        if t.rows.is_empty() {
+            html.push_str("<p>Sem registos.</p>\n");
+            continue;
+        }
+        html.push_str(
+            "<table style=\"border-collapse:collapse;width:100%;\" border=\"1\" cellpadding=\"6\" cellspacing=\"0\">\n<thead><tr>",
+        );
+        for header in &t.headers {
+            html.push_str(&format!(
+                "<th style=\"{cell}background-color:#edf1ee;\">{}</th>",
+                escape_html(header)
+            ));
+        }
+        html.push_str("</tr></thead>\n<tbody>\n");
+        for row in &t.rows {
+            html.push_str("<tr>");
+            for value in row {
+                html.push_str(&format!("<td style=\"{cell}\">{}</td>", escape_html(value)));
+            }
+            html.push_str("</tr>\n");
+        }
+        html.push_str("</tbody>\n</table>\n");
+    }
+    html.push_str(&format!(
+        "<p class=\"meta\">Gerado em {}. Instrumento de apoio à gestão; não é um documento contabilístico certificado.</p>\n</body>\n</html>\n",
+        date(generated_on)
+    ));
+    html
 }
 
 #[cfg(test)]
@@ -441,5 +553,98 @@ mod tests {
         );
         assert_eq!(rows[1][2], money(50));
         assert_eq!(rows[2][2], money(400));
+    }
+
+    #[test]
+    fn the_annual_report_covers_only_that_year_but_honours_earlier_payments() {
+        let tx = |id, date, amount, balance| BankTransaction {
+            id,
+            date,
+            amount,
+            balance,
+            ..base()
+        };
+        let transactions = [
+            tx(1, d(2024, 12, 20), 10_000, 400_000),
+            tx(2, d(2025, 1, 10), -750, 399_250),
+            tx(3, d(2025, 6, 1), 5_000, 404_250),
+            tx(4, d(2026, 1, 5), -9_999, 394_251),
+        ];
+        let charge = |id, due| Charge {
+            id,
+            due_date: due,
+            ..charges()[0].clone()
+        };
+        // Charge 1 is last year's; 2 and 3 fall due in 2025 (3 is paid in advance in 2024).
+        let all = [
+            charge(1, d(2024, 12, 31)),
+            charge(2, d(2025, 1, 31)),
+            charge(3, d(2025, 2, 28)),
+        ];
+        let payments = [
+            Payment {
+                id: 1,
+                transaction_id: 1,
+                charge_id: 3,
+                amount: 10_000,
+            },
+            Payment {
+                id: 2,
+                transaction_id: 3,
+                charge_id: 2,
+                amount: 5_000,
+            },
+        ];
+        let report = annual_report(&transactions, &all, &payments, 2025, d(2026, 3, 1));
+        let totals: HashMap<&str, &str> = report.tables[0]
+            .rows
+            .iter()
+            .map(|r| (r[0].as_str(), r[1].as_str()))
+            .collect();
+
+        assert_eq!(report.year, Some(2025));
+        assert_eq!(report.as_of, d(2025, 12, 31));
+        assert_eq!(totals["Entradas registadas"], money(5_000));
+        assert_eq!(totals["Saídas registadas"], money(750));
+        assert_eq!(totals["Saldo do último extrato"], money(404_250));
+        assert_eq!(totals["Quotas registadas"], money(20_000));
+        assert_eq!(totals["Quotas por liquidar"], money(5_000));
+    }
+
+    #[test]
+    fn the_current_year_report_stops_at_today() {
+        let transactions = [
+            BankTransaction {
+                date: d(2025, 1, 3),
+                ..base()
+            },
+            BankTransaction {
+                id: 2,
+                date: d(2025, 9, 1),
+                ..base()
+            },
+        ];
+        let report = annual_report(&transactions, &[], &[], 2025, d(2025, 6, 30));
+        assert_eq!(report.as_of, d(2025, 6, 30));
+        assert_eq!(report.tables[0].rows[2][1], money(750));
+    }
+
+    #[test]
+    fn the_document_is_a_standalone_escaped_page() {
+        let transactions = [BankTransaction {
+            description: "<img src=x onerror=alert(1)>".into(),
+            ..base()
+        }];
+        let report = annual_report(&transactions, &charges(), &[], 2025, d(2025, 6, 30));
+        let html = report_document(&report, d(2025, 7, 1));
+
+        assert!(html.starts_with("<!DOCTYPE html>"));
+        assert!(html.contains("<title>Relatório financeiro do condomínio - 2025</title>"));
+        assert!(html.contains("<meta charset=\"utf-8\">"));
+        assert!(html.contains("<table"));
+        assert!(html.contains("Gerado em 01/07/2025"));
+        assert!(!html.contains("<img"));
+        assert!(!html.contains("<script"));
+        assert!(html.contains("&lt;img src=x onerror=alert(1)&gt;"));
     }
 }

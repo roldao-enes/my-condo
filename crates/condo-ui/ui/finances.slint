@@ -143,6 +143,14 @@ export component FinancesPage inherits VerticalLayout {
         }
 
         AppButton {
+            text: "Relatório anual";
+            icon: Icons.file-up;
+            clicked => {
+                Backend.export-report();
+            }
+        }
+
+        AppButton {
             text: "Registar quota";
             icon: Icons.plus;
             enabled: Backend.fin-can-charge;
