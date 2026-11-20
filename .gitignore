@@ -1,25 +1,12 @@
-# Dependencies and AdonisJS build
-node_modules
-build
-tmp
-.local
-.env.production
-.env.cloud
-task-definition.rendered.json
-*.dump
+# Rust
+/target
+/dist
 
-# Secrets
+# Local data and secrets
 .env
-.env.local
-.env.production.local
-.env.development.local
-
-# Frontend assets compiled code
-public/assets
-
-# Build tools specific
-npm-debug.log
-yarn-error.log
+.env.*
+.local
+tmp
 
 # Editors specific
 .fleet
@@ -28,7 +15,3 @@ yarn-error.log
 
 # Platform specific
 .DS_Store
-
-# Rust
-/target
-/dist

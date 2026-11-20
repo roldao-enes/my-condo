@@ -1,23 +1,18 @@
 # Onboarding: Meu Condomínio for a fullstack developer new to Rust
 
 This guide gets you from "I have never opened a `.rs` file" to shipping your first change. It
-assumes you know TypeScript/JavaScript, SQL, and a web framework (the legacy code in this repo is
-AdonisJS + React, so that is the vocabulary used for comparisons).
+assumes you know TypeScript/JavaScript, SQL, and a web framework, so that is the vocabulary used for
+comparisons.
 
-Read this first, then [README.md](../README.md) for features and commands. The older
-[rust-migration-handoff.md](rust-migration-handoff.md) has the full decision history, but parts of
-it are stale (it says the Rust work is uncommitted, mentions a `rust.yml` workflow that is now
-`desktop.yml`, and lists the README as "not started"). Trust the code and this file over it when
-they disagree.
+Read this first, then [README.md](../README.md) for features and commands. Trust the code and this
+file over any other doc when they disagree.
 
 ## 1. What this is, in one paragraph
 
 A **native desktop app** for running one condominium in Portugal: residents and units, bank
 statement import and payment matching, and email announcements. There is **no server, no browser
 and no web view**. The UI is [Slint](https://slint.dev) (think "React-like declarative UI, compiled
-to native code"), data is a single **SQLite** file, and the UI language is pt-PT. The Node/React app
-at the repo root (`app/`, `inertia/`, `config/`, ...) is the **legacy reference** and is not
-documented; ignore it unless you need to check what the old behaviour was.
+to native code"), data is a single **SQLite** file, and the UI language is pt-PT.
 
 ## 2. Mental model: where web concepts live
 
@@ -182,8 +177,8 @@ radius.
   * Payments can be partial; `allocate`/`unallocate` must keep charge balances consistent.
 * **Safety net**: the **golden report test**
   ([condo-db/tests/golden_report.rs](../crates/condo-db/tests/golden_report.rs) against
-  `fixtures/golden_report.txt`) compares output byte for byte with the legacy app's. If it fails,
-  do **not** just regenerate the fixture: check the original TypeScript behaviour first. The
+  `fixtures/golden_report.txt`) compares output byte for byte with the approved report. If it fails,
+  do **not** just regenerate the fixture: work out why the output changed first. The
   fixture line endings are pinned in `.gitattributes`; do not let your editor convert them.
 
 ### 6.3 Backup, restore, and JSON export/import
@@ -272,7 +267,7 @@ test → controller handler via `mutate` → `.slint` dialog/button → UI flow 
   (see `settings_flow.rs`).
 * **Open the screenshots** in `target/ui-screenshots/`. They have caught real layout bugs that
   assertions missed.
-* When a test expectation and the code disagree, check the legacy TypeScript before "fixing" the code.
+* When a test expectation and the code disagree, work out which one is right before "fixing" either.
   Several times the test was wrong.
 
 ## 9. Slint cheat sheet (the gotchas that cost time)
@@ -332,7 +327,7 @@ because it touches an open decision. Effort: **S** about half a day, **M** one t
 | 8 | **Edit and delete announcement drafts** | The web app had neither, but drafts are only a subject and body. Guard the service so queued announcements stay immutable. | [announcements.rs](../crates/condo-db/src/announcements.rs) |
 | 9 | **Session timeout** (auto-lock after N minutes idle) | Use a Slint `Timer` plus last-activity time in the controller; send the user back to login. Owner: decide the duration (web used 2 h) and whether it is optional. | `controller.rs`, `session.rs` |
 | 10 | **CSV export of movements or the debt table** | Reuses `FinanceData` and `locale` formatting; the file-dialog trait already exists. Write it in `condo-core` or `condo-app` as a pure function and unit-test it. | [files.rs](../crates/condo-ui/src/files.rs), `viewmodel/finance.rs` |
-| 11 | **Keyboard support for dropdowns** (arrows, Enter, Escape) and visible focus rings | Called out as untested in the handoff. Needs care with the Slint gotchas in section 9; verify by hand. | `SelectField` in [components.slint](../crates/condo-ui/ui/components.slint) |
+| 11 | **Keyboard support for dropdowns** (arrows, Enter, Escape) and visible focus rings | Never tested. Needs care with the Slint gotchas in section 9; verify by hand. | `SelectField` in [components.slint](../crates/condo-ui/ui/components.slint) |
 | 12 | **Show the report as real tables in the preview** | The clipboard already gets HTML tables; only the on-screen preview is plain text. | `ReportDialog` in `ui/finances.slint`, [report.rs](../crates/condo-core/src/report.rs) |
 | 13 | **Last backup reminder** ("last backup: 40 days ago") | Store a timestamp in `app_settings` (table already exists, see `settings.rs`); show a warning tile on the overview. No migration needed. | [settings.rs](../crates/condo-db/src/settings.rs), `backup.rs` |
 
@@ -367,7 +362,5 @@ existing migrations or the golden report fixture.
 
 * [README.md](../README.md): features, tech stack, data locations, packaging commands.
 * [docs/packaging.md](packaging.md): building `.app`, `.dmg`, `.deb`, `.exe`.
-* [docs/rust-migration-handoff.md](rust-migration-handoff.md): the full decision log and the list of
-  lessons learned the hard way (section 7 there). Skim it, but verify against the code.
 * The Rust Book (chapters 1 to 10 are enough to start), *Rust by Example* for quick syntax lookups,
   and the [Slint docs](https://slint.dev/docs) for the UI language.

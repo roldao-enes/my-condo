@@ -7,11 +7,10 @@ lives in one SQLite file in your user folder.
 The interface is in Portuguese (pt-PT), amounts are in EUR, and dates default to the
 Europe/Lisbon time zone.
 
-> **Status:** the Rust rewrite is feature-complete for residency, finances, announcements and
+> **Status:** the app is feature-complete for residency, finances, announcements and
 > settings. Packages build locally on macOS and Ubuntu/Debian; Windows and Linux have not yet been
 > run on real machines. Not implemented yet: code signing/notarisation, a Windows installer,
-> "send test email", change password and add administrator. See
-> [docs/rust-migration-handoff.md](docs/rust-migration-handoff.md) for details.
+> "send test email", change password and add administrator.
 >
 > The finance features are a management aid, not a certified accounting or statutory-notice system.
 
@@ -143,12 +142,6 @@ on Ubuntu 22.04, Windows and macOS, then builds each platform's package with the
 keeps it as a downloadable artifact of the run for 14 days. On every merge to `main`, once all checks
 and packages succeed, a GitHub release (`v<version>-build.<run>`) is created with the macOS, Linux
 and Windows packages attached. Nothing is deployed.
-
-## Legacy code
-
-The repository still contains the original AdonisJS, React and PostgreSQL web app (`app/`,
-`inertia/`, `config/`, and so on). It is kept as the behavioural reference until the cutover and is
-not documented here.
 
 ## License
 

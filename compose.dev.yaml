@@ -1,9 +1,0 @@
-# Local development helpers only. Not part of any deployment.
-#   docker compose -f compose.dev.yaml up -d
-services:
-  mailpit:
-    image: axllent/mailpit:latest
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:1025:1025' # SMTP
-      - '127.0.0.1:8025:8025' # web inbox
