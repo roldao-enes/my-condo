@@ -137,6 +137,8 @@ export component TextField inherits VerticalLayout {
     // Highlights the field and shows the message under it.
     in property <string> error;
     in-out property <string> text <=> input.text;
+    // Password fields get an eye button that shows the text while it is being typed.
+    in-out property <bool> revealed: false;
     callback accepted();
     callback edited(string);
     public function focus-field() {
@@ -183,7 +185,7 @@ export component TextField inherits VerticalLayout {
                 color: Theme.text;
                 single-line: true;
                 enabled: root.enabled;
-                input-type: root.password ? InputType.password : InputType.text;
+                input-type: root.password && !root.revealed ? InputType.password : InputType.text;
                 accessible-role: text-input;
                 accessible-label: root.label != "" ? root.label : root.placeholder;
                 accepted => {
@@ -191,6 +193,29 @@ export component TextField inherits VerticalLayout {
                 }
                 edited => {
                     root.edited(self.text);
+                }
+            }
+
+            if root.password: Rectangle {
+                width: 32px;
+                accessible-role: button;
+                accessible-label: root.revealed ? "Ocultar palavra-passe" : "Mostrar palavra-passe";
+                accessible-action-default => {
+                    root.revealed = !root.revealed;
+                }
+                Icon {
+                    source: root.revealed ? Icons.eye-off : Icons.eye;
+                    tint: Theme.muted;
+                    size: 18px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                }
+
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => {
+                        root.revealed = !root.revealed;
+                    }
                 }
             }
         }
