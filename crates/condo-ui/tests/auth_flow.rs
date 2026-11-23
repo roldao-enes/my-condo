@@ -78,6 +78,10 @@ fn first_run_setup_then_login_logout_and_restart() {
     let restarted = h.restart();
     assert_eq!(restarted.screen(), "login");
     assert_eq!(restarted.backend().get_user_name().as_str(), "");
+
+    // ...and the returning administrator can sign in again with the same password.
+    restarted.sign_in("ana@example.test", PASSWORD);
+    assert_eq!(restarted.screen(), "main", "error: {}", restarted.error());
 }
 
 #[test]
@@ -158,4 +162,26 @@ fn self_check_prepares_a_data_folder_without_a_window() {
     assert!(logged.contains("app.self_check"), "{logged}");
     // Running it again on the same folder is fine.
     condo_ui::self_check(&data).unwrap();
+}
+
+#[test]
+fn a_returning_administrator_can_sign_in_again_after_every_logout() {
+    let h = Harness::fresh();
+    h.type_into("Nome", "Ana Martins");
+    h.type_into("Email", "ana@example.test");
+    h.type_into("Palavra-passe (pelo menos 12 caracteres)", PASSWORD);
+    h.type_into("Repetir palavra-passe", PASSWORD);
+    h.click("Criar administrador");
+    assert_eq!(h.screen(), "main", "{}", h.error());
+
+    for round in 0..3 {
+        h.click("Terminar sessão");
+        assert_eq!(h.screen(), "login", "round {round}");
+        // A mistake first, then the right password, with the password revealed while typing.
+        h.sign_in("ana@example.test", "wrong password!!");
+        assert_eq!(h.error(), "Email ou palavra-passe incorretos.");
+        h.click("Mostrar palavra-passe");
+        h.sign_in("ana@example.test", PASSWORD);
+        assert_eq!(h.screen(), "main", "round {round}: {}", h.error());
+    }
 }
