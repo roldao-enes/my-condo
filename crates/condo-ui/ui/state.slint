@@ -208,6 +208,23 @@ export global Backend {
     in property <bool> smtp-configured;
     in property <string> data-dir;
     in property <bool> can-load-demo;
+    // --- Updates (notify only) ---------------------------------------------------------
+    in property <string> app-version;
+    // The "new version available" banner above the page.
+    in property <bool> update-visible;
+    in property <string> update-text;
+    // Older than the release's minimum version: the banner cannot be put off.
+    in property <bool> update-required;
+    // Settings card. `update-configured` is false in builds without a trusted key.
+    in property <bool> update-configured;
+    in-out property <bool> update-checks-enabled: true;
+    in property <bool> update-checking;
+    in property <string> update-status;
+    callback dismiss-update();
+    callback open-update();
+    callback check-updates();
+    callback set-update-checks(bool);
+
     // What the chosen backup contains, shown before restoring it.
     in property <string> restore-summary;
     // What the chosen export files contain, shown before importing them.

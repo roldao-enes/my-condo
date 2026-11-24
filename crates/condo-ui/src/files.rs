@@ -23,6 +23,23 @@ pub trait Clipboard {
     fn copy_html(&self, html: &str, text: &str) -> Result<(), String>;
 }
 
+/// Showing a web page in the person's browser.
+pub trait UrlOpener {
+    fn open(&self, url: &str) -> Result<(), String>;
+}
+
+/// The system's default browser. Only `https://` addresses are ever handed to it.
+pub struct NativeOpener;
+
+impl UrlOpener for NativeOpener {
+    fn open(&self, url: &str) -> Result<(), String> {
+        if !url.starts_with("https://") {
+            return Err("só são abertas ligações https".to_owned());
+        }
+        open::that_detached(url).map_err(|error| error.to_string())
+    }
+}
+
 /// The system clipboard.
 pub struct NativeClipboard;
 

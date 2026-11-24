@@ -2,7 +2,8 @@
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
-use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
+pub use ed25519_dalek::VerifyingKey;
+use ed25519_dalek::{Signature, Signer, SigningKey, Verifier};
 
 use crate::manifest::{Manifest, SCHEMA};
 use crate::UpdateError;

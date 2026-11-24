@@ -149,7 +149,16 @@ fn every_released_version_upgrades_without_losing_data() {
 
         let database = copy_of(version, dir.path(), "condo.db");
         let backups = dir.path().join("backups");
-        let conn = open_with_backups(&database, &backups).unwrap();
+        let (conn, report) = open_reporting(&database, &backups).unwrap();
+
+        // The caller is told what happened, so the person can be too.
+        match &report {
+            Some(report) => {
+                assert_eq!((report.from, report.to), (version, SCHEMA_VERSION));
+                assert!(report.backup.is_file());
+            }
+            None => assert_eq!(version, SCHEMA_VERSION),
+        }
 
         // Fully upgraded and healthy...
         assert_eq!(version_of(&conn), SCHEMA_VERSION, "from v{version}");
