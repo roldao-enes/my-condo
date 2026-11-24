@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/condo-core", "crates/condo-audit", "crates/condo-db", "crates/condo-mail", "crates/condo-app", "crates/condo-ui"]
+members = ["crates/condo-core", "crates/condo-audit", "crates/condo-db", "crates/condo-mail", "crates/condo-app", "crates/condo-ui", "crates/condo-update"]
 
 [workspace.package]
 edition = "2021"

@@ -1,0 +1,27 @@
+[package]
+name = "condo-update"
+version = "0.1.0"
+description = "Signed update manifests for Meu Condominio: verifying them in the app, producing them in CI"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "condo-release"
+path = "src/bin/condo-release.rs"
+
+[dependencies]
+base64 = "0.22"
+ed25519-dalek = { version = "2", features = ["std", "rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10.9"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3.27.0"

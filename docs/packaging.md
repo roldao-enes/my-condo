@@ -50,6 +50,7 @@ real data. `meu-condominio --version` and `--self-check [folder]` work without o
 
 `.github/workflows/desktop.yml` checks (fmt, clippy, tests) on Ubuntu 22.04, Windows and macOS, then
 runs the same packaging scripts on each OS and keeps the results as downloadable artifacts of the
-run (14 days), including for pull requests. There is no publishing step.
+run (14 days), including for pull requests. Merges to `main` also publish a pre-release, and a pushed
+`v*` tag publishes a signed release that installed apps can detect: see `docs/updates.md`.
 
 Not done: code signing/notarisation, Windows installer/icon, Linux AppImage/Flatpak, `.rpm`.
