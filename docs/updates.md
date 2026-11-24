@@ -5,8 +5,23 @@ are no app stores and no OS code-signing certificates involved; trust comes from
 only you hold, whose public half is compiled into the app (`crates/condo-update/update-public-key.txt`).
 An app only believes a `latest.json` whose `latest.json.sig` verifies against that key, so a hijacked
 download host cannot push a fake update. The app **never installs anything by itself**: it tells the
-user a version is available and links to it. (Updating the data is separate and always safe: the app
+user a version is available and links to the release page. (Updating the data is separate and always safe: the app
 snapshots the database before any schema upgrade, see `docs/packaging.md`.)
+
+## What the app does
+
+* After sign-in, and then at most once every 24 hours while it is open, it downloads
+  `releases/latest/download/latest.json` and its `.sig` (a few hundred bytes; plain GETs of public
+  files that carry nothing about the person or the condominium), verifies the signature and compares
+  versions. A newer version shows a banner with **Ver novidades** (opens the release page in the
+  browser) and **Mais tarde** (hides that version until a newer one appears). If the running version
+  is below `minimum_version`, the banner cannot be put off.
+* **Definições > Atualizações** has a checkbox to turn the automatic check off, a **Procurar agora**
+  button, and the installed version. Failures of the automatic check are silent (being offline is
+  normal); a manual check says what went wrong.
+* Builds without a public key in `update-public-key.txt` never contact the network for this.
+* When starting a new version upgrades the database, a notice after sign-in says a safety copy of
+  the previous state is in the `backups` folder.
 
 ## One-time setup
 

@@ -2,7 +2,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Icons } from "icons.slint";
 import { Backend } from "state.slint";
-import { AppButton, TextField, Card, Modal, Segmented, FormActions, InlineError, PageHeading } from "components.slint";
+import { AppButton, TextField, Card, Modal, Segmented, FormActions, InlineError, PageHeading, Checkbox } from "components.slint";
 
 component SectionTitle inherits VerticalLayout {
     in property <string> title;
@@ -125,6 +125,47 @@ export component SettingsPage inherits VerticalLayout {
                             text: "Guardar email";
                             clicked => {
                                 Backend.save-smtp(host.text, port.text, root.secure, user.text, password.text, from.text);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- Updates -----------------------------------------------------------------
+            Card {
+                VerticalLayout {
+                    padding: 24px;
+                    spacing: 14px;
+                    SectionTitle {
+                        title: "Atualizações";
+                        text: "Versão instalada: " + Backend.app-version + ". A aplicação consulta, no máximo uma vez por dia, se existe uma versão nova. Não envia dados seus nem do condomínio e nunca instala nada sozinha.";
+                    }
+
+                    Checkbox {
+                        text: "Procurar atualizações automaticamente";
+                        checked <=> Backend.update-checks-enabled;
+                        toggled(on) => {
+                            Backend.set-update-checks(on);
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
+                        alignment: start;
+                        AppButton {
+                            text: "Procurar agora";
+                            enabled: Backend.update-configured && !Backend.update-checking;
+                            clicked => {
+                                Backend.check-updates();
+                            }
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: Backend.update-status;
+                                font-size: 13px;
+                                color: Theme.muted;
                             }
                         }
                     }

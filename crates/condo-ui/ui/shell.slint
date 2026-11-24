@@ -1,7 +1,7 @@
 import { Theme } from "theme.slint";
 import { Icons } from "icons.slint";
 import { Backend } from "state.slint";
-import { Icon, IconButton, Avatar, NavItem, Notice } from "components.slint";
+import { Icon, IconButton, Avatar, NavItem, Notice, AppButton } from "components.slint";
 
 // Sidebar + top bar around whichever page is shown.
 export component Shell inherits Rectangle {
@@ -223,6 +223,60 @@ export component Shell inherits Rectangle {
                 vertical-stretch: 1;
                 padding: 28px;
                 spacing: 16px;
+
+                if Backend.update-visible: Rectangle {
+                    height: update-row.preferred-height;
+                    border-radius: Theme.radius;
+                    background: Backend.update-required ? Theme.danger-soft : Theme.success-soft;
+                    accessible-role: text;
+                    accessible-label: Backend.update-text;
+
+                    update-row := HorizontalLayout {
+                        padding: 12px;
+                        padding-left: 14px;
+                        spacing: 10px;
+                        VerticalLayout {
+                            alignment: center;
+                            Icon {
+                                source: Backend.update-required ? Icons.alert : Icons.file-up;
+                                tint: Backend.update-required ? Theme.danger : Theme.green-text;
+                                size: 18px;
+                            }
+                        }
+
+                        Text {
+                            text: Backend.update-text;
+                            color: Theme.text;
+                            font-size: 14px;
+                            wrap: word-wrap;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            AppButton {
+                                kind: "primary";
+                                text: "Ver novidades";
+                                height: 32px;
+                                clicked => {
+                                    Backend.open-update();
+                                }
+                            }
+                        }
+
+                        if !Backend.update-required: VerticalLayout {
+                            alignment: center;
+                            AppButton {
+                                text: "Mais tarde";
+                                height: 32px;
+                                clicked => {
+                                    Backend.dismiss-update();
+                                }
+                            }
+                        }
+                    }
+                }
 
                 if Backend.notice-text != "": Notice {
                     kind: Backend.notice-kind;

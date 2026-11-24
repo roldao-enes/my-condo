@@ -12,6 +12,7 @@ use condo_app::backup::{self, BackupError};
 use condo_app::paths::AppPaths;
 use condo_app::portable::{self, ImportPlan, PortableError};
 use condo_app::session::{Login, LoginError, Session};
+use condo_app::updates::{SignedCheck, UpdateCheck};
 use condo_audit::{AuditActor, AuditFailure};
 use condo_core::locale::{date, initials, lisbon_date, parse_input_date};
 use condo_core::occupancy::ResidentRole;
@@ -23,13 +24,16 @@ use condo_db::{auth, DatabaseError, ServiceError, ServiceResult};
 use condo_mail::{settings as smtp_settings, SmtpSettings};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
-use crate::files::{Clipboard, FileDialogs, NativeClipboard, NativeDialogs};
+use crate::files::{
+    Clipboard, FileDialogs, NativeClipboard, NativeDialogs, NativeOpener, UrlOpener,
+};
 use crate::mail::{MailRun, SmtpRun};
 use crate::viewmodel::{self, RelationView, UnitView};
 use crate::{ActivityRow, AppWindow, Backend, RelationRow, StatCard, UnitRow};
 
 mod announcements;
 mod finance;
+mod updates;
 
 pub type Clock = Rc<dyn Fn() -> DateTime<Utc>>;
 
@@ -71,6 +75,13 @@ pub struct Controller {
     queue_unit: Option<i64>,
     mail: std::sync::Arc<dyn MailRun>,
     sending: Option<announcements::Sending>,
+    // Updates: how to look for them, the check in progress and what it found.
+    updater: std::sync::Arc<dyn UpdateCheck>,
+    opener: Box<dyn UrlOpener>,
+    update_check: Option<updates::Checking>,
+    update_available: Option<condo_update::UpdateStatus>,
+    /// Set when starting the app upgraded the database; shown once after sign-in.
+    upgrade_notice: Option<String>,
     /// Keeps the background-delivery timers running for as long as the controller lives.
     timers: Vec<slint::Timer>,
     conn: Connection,
@@ -141,8 +152,22 @@ fn friendly(error: &ServiceError) -> String {
 
 impl Controller {
     pub fn open(paths: &AppPaths, now: Clock) -> Result<Self, StartupError> {
-        let conn = condo_db::open(&paths.database())?;
+        let (conn, upgraded) = condo_db::open_reporting(&paths.database(), &paths.backups_dir())?;
         let trail = AuditTrail::open(&paths.audit_dir(), DEFAULT_MAX_BYTES)?;
+        let upgrade_notice = upgraded.map(|report| {
+            trail.succeeded(
+                "database.upgrade",
+                &anonymous_actor(),
+                &format!(
+                    "upgraded the database from schema {} to {}, keeping a safety copy",
+                    report.from, report.to
+                ),
+                None,
+            );
+            "A base de dados foi atualizada para esta versão. Ficou guardada uma cópia de \
+             segurança do estado anterior na pasta «backups» (a pasta de dados está em Definições)."
+                .to_owned()
+        });
         Ok(Self {
             paths: paths.clone(),
             dialogs: Box::new(NativeDialogs),
@@ -160,6 +185,11 @@ impl Controller {
             queue_unit: None,
             mail: std::sync::Arc::new(SmtpRun),
             sending: None,
+            updater: std::sync::Arc::new(SignedCheck::from_release_page()),
+            opener: Box::new(NativeOpener),
+            update_check: None,
+            update_available: None,
+            upgrade_notice,
             timers: vec![],
             conn,
             trail,
@@ -250,6 +280,11 @@ impl Controller {
         self.query.clear();
         self.history = false;
         self.show_page(ui, "overview");
+        if let Some(text) = self.upgrade_notice.take() {
+            self.notice(ui, "success", &text);
+        }
+        self.refresh_updates(ui);
+        self.auto_check_updates(ui);
     }
 
     pub fn login(&mut self, ui: &AppWindow, email: &str, password: &str) {
@@ -348,6 +383,7 @@ impl Controller {
         self.keep_dialog = false;
         self.ann_open = None;
         self.sending = None;
+        self.clear_updates(ui);
         let backend = ui.global::<Backend>();
         backend.set_screen("login".into());
         backend.set_dialog("".into());
@@ -567,6 +603,7 @@ impl Controller {
         backend.set_can_load_demo(
             self.directory.units.is_empty() && self.directory.residents.is_empty(),
         );
+        self.refresh_updates(ui);
     }
 
     // --- Dialogs --------------------------------------------------------------------------
@@ -1222,7 +1259,8 @@ pub fn attach(ui: &AppWindow, controller: Controller) -> Rc<RefCell<Controller>>
         end.as_str()
     ));
     finance::attach(ui, &controller);
-    let timers = announcements::attach(ui, &controller);
+    let mut timers = announcements::attach(ui, &controller);
+    timers.extend(updates::attach(ui, &controller));
     controller.borrow_mut().timers = timers;
     on!(on_save_smtp, |c,
                        ui,

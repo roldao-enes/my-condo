@@ -77,6 +77,24 @@ pub fn open(path: &Path) -> Result<Connection, DatabaseError> {
 /// there. After a successful upgrade only the newest few snapshots are kept. A new database, one
 /// already up to date, and one that is too new (refused) get no snapshot.
 pub fn open_with_backups(path: &Path, backup_dir: &Path) -> Result<Connection, DatabaseError> {
+    open_with(path, backup_dir, MIGRATIONS).map(|(conn, _)| conn)
+}
+
+/// What [`open_reporting`] did to an existing database that was older than this build.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpgradeReport {
+    pub from: usize,
+    pub to: usize,
+    /// The snapshot of the database as it was before the upgrade.
+    pub backup: PathBuf,
+}
+
+/// Like [`open_with_backups`], and also says whether (and how) the database was upgraded, so the
+/// app can tell the person where the safety copy is.
+pub fn open_reporting(
+    path: &Path,
+    backup_dir: &Path,
+) -> Result<(Connection, Option<UpgradeReport>), DatabaseError> {
     open_with(path, backup_dir, MIGRATIONS)
 }
 
@@ -84,7 +102,7 @@ fn open_with(
     path: &Path,
     backup_dir: &Path,
     migrations: &[&str],
-) -> Result<Connection, DatabaseError> {
+) -> Result<(Connection, Option<UpgradeReport>), DatabaseError> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
     }
@@ -99,15 +117,24 @@ fn open_with(
     // Version 0 is a file that was just created: there is nothing to lose yet.
     let current = schema_version(&conn)?;
     let upgrading = current > 0 && current < migrations.len();
-    if upgrading {
-        snapshot_before_upgrade(&conn, backup_dir, current, migrations.len())
-            .map_err(DatabaseError::PreMigrationBackup)?;
-    }
+    let backup = if upgrading {
+        Some(
+            snapshot_before_upgrade(&conn, backup_dir, current, migrations.len())
+                .map_err(DatabaseError::PreMigrationBackup)?,
+        )
+    } else {
+        None
+    };
     migrate(&mut conn, migrations)?;
     if upgrading {
         prune_snapshots(backup_dir);
     }
-    Ok(conn)
+    let report = backup.map(|backup| UpgradeReport {
+        from: current,
+        to: migrations.len(),
+        backup,
+    });
+    Ok((conn, report))
 }
 
 /// A fresh in-memory database, fully migrated. Used by tests.

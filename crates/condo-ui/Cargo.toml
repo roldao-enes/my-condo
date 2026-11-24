@@ -23,9 +23,11 @@ condo-audit = { path = "../condo-audit" }
 condo-db = { path = "../condo-db" }
 condo-mail = { path = "../condo-mail" }
 condo-app = { path = "../condo-app" }
+condo-update = { path = "../condo-update" }
 chrono = { version = "0.4", default-features = false, features = ["std", "clock"] }
 slint = { version = "1.19.0", default-features = false, features = ["accessibility", "backend-winit", "compat-1-2", "renderer-femtovg", "renderer-software", "software-renderer-systemfonts", "std"] }
 rfd = "0.18.0"
+open = "5.4.5"
 thiserror = "2"
 arboard = { version = "3.7.0", features = ["wayland-data-control"] }
 

@@ -9,3 +9,4 @@ pub mod mailer;
 pub mod paths;
 pub mod portable;
 pub mod session;
+pub mod updates;
