@@ -1,0 +1,12 @@
+# Public keys that may sign Meu Condominio updates: one base64 Ed25519 key per line.
+# Lines starting with # and blank lines are ignored.
+#
+# Empty = this build never checks for updates (it fails closed rather than trust anything).
+# To enable them, generate a key pair once and paste the printed public key below:
+#
+#   cargo run -p condo-update --bin condo-release -- keygen ~/condo-update-private.key
+#
+# Keep the private key file secret and offline (also store it as the GitHub secret
+# UPDATE_SIGNING_KEY, see docs/updates.md). To rotate keys, add the new public key on a new line
+# and keep the old one until every install has updated past the release that added it.
+dY0jd5rkyq+wrTeccOMId79+tEJGGlPoPwo0WVwlHy0=
