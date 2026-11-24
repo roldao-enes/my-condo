@@ -1,6 +1,6 @@
 [package]
 name = "condo-mail"
-version = "0.1.0"
+version = "0.1.1"
 description = "Email delivery (SMTP) and the retrying queue runner for Meu Condominio"
 edition.workspace = true
 rust-version.workspace = true
