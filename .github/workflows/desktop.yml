@@ -1,6 +1,7 @@
 # Meu Condominio desktop app: check on every OS, then package it for each OS with the same
 # scripts you can run locally (see docs/packaging.md). On every push to main (a merge) the checks
-# run first, then the packages of all three OSs are attached to a new GitHub release.
+# run first, then the packages of all three OSs are attached to a new (pre-)release; a pushed v*
+# tag makes a real, signed release (docs/updates.md).
 name: Desktop
 
 on:
@@ -127,19 +128,49 @@ jobs:
           pattern: meu-condominio-*
           path: artifacts
           merge-multiple: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: release-tool
       - name: Create the release with the packages of all three OSs
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Update signing, see docs/updates.md. Only tagged releases are signed and announced.
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+          UPDATE_MINIMUM_VERSION: ${{ vars.UPDATE_MINIMUM_VERSION }}
         run: |
           set -euo pipefail
+          mapfile -t files < <(find artifacts -type f | sort)
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            # A real release: its version is what installed apps compare against.
             tag="$GITHUB_REF_NAME"
-            target_args=()
+            version="$(sed -n 's/^version = "\(.*\)"/\1/p' crates/condo-ui/Cargo.toml | head -1)"
+            if [[ "$tag" != "v${version}" ]]; then
+              echo "::error::The tag $tag does not match the app version $version (crates/condo-ui/Cargo.toml)."
+              exit 1
+            fi
+            if [[ -z "${UPDATE_SIGNING_KEY:-}" ]]; then
+              echo "::error::The UPDATE_SIGNING_KEY secret is not set, so this release cannot be signed (docs/updates.md)."
+              exit 1
+            fi
+            cargo build --release --locked -p condo-update --bin condo-release
+            tool=target/release/condo-release
+            "$tool" manifest --version "$tag" --published "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+              --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$tag" \
+              --notes-url "https://github.com/$GITHUB_REPOSITORY/releases/tag/$tag" \
+              --minimum-version "${UPDATE_MINIMUM_VERSION:-}" \
+              --out latest.json "${files[@]}"
+            "$tool" sign --key-env UPDATE_SIGNING_KEY latest.json
+            # What the apps will do: check the signature with the key compiled into them. This
+            # also fails if the secret does not belong to the key in update-public-key.txt.
+            "$tool" verify --public-keys crates/condo-update/update-public-key.txt latest.json latest.json.sig
+            gh release create "$tag" "${files[@]}" latest.json latest.json.sig \
+              --repo "$GITHUB_REPOSITORY" --title "$tag" --generate-notes --latest
           else
+            # A snapshot of every merge to main: for testing, never announced to installed apps.
+            # Pre-releases are skipped by GitHub's "latest release" address the apps check.
             version="$(grep -m1 '^version' crates/condo-app/Cargo.toml | cut -d'"' -f2)"
             tag="v${version}-build.${GITHUB_RUN_NUMBER}"
-            target_args=(--target "$GITHUB_SHA")
+            gh release create "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "$tag" --generate-notes --prerelease
           fi
-          mapfile -t files < <(find artifacts -type f | sort)
-          gh release create "$tag" "${files[@]}" --repo "$GITHUB_REPOSITORY" "${target_args[@]}" \
-            --title "$tag" --generate-notes
