@@ -9,3 +9,4 @@
 # Keep the private key file secret and offline (also store it as the GitHub secret
 # UPDATE_SIGNING_KEY, see docs/updates.md). To rotate keys, add the new public key on a new line
 # and keep the old one until every install has updated past the release that added it.
+dY0jd5rkyq+wrTeccOMId79+tEJGGlPoPwo0WVwlHy0=
