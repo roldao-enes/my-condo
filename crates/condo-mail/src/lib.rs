@@ -24,6 +24,21 @@ pub struct OutgoingEmail {
     pub text: String,
 }
 
+/// The message sent by "send test email": addressed to the configured sender, so it lands in the
+/// mailbox the administrator already controls and proves the whole path (login, relay, sender).
+pub fn test_message(from: &str) -> Result<OutgoingEmail, MailError> {
+    let mailbox: lettre::message::Mailbox = from
+        .parse()
+        .map_err(|e| MailError(format!("Remetente inválido: {e}")))?;
+    Ok(OutgoingEmail {
+        to_name: mailbox.name.clone().unwrap_or_default(),
+        to_address: mailbox.email.to_string(),
+        subject: "Email de teste — Meu Condomínio".to_owned(),
+        text: "Se está a ler esta mensagem, o envio de email do Meu Condomínio está a funcionar.\n"
+            .to_owned(),
+    })
+}
+
 /// A failed send. The message is stored with the attempt and shown to the administrator.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("{0}")]
@@ -112,4 +127,21 @@ impl<T: MailTransport> EmailSender<T> {
 
 mod rusqlite_result {
     pub type Result<T> = std::result::Result<T, condo_db::rusqlite::Error>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_test_message_goes_to_the_sender() {
+        let m = test_message("Condomínio <condo@example.test>").unwrap();
+        assert_eq!(
+            (m.to_name.as_str(), m.to_address.as_str()),
+            ("Condomínio", "condo@example.test")
+        );
+        let bare = test_message("condo@example.test").unwrap();
+        assert_eq!(bare.to_name, "");
+        assert!(test_message("nope").is_err());
+    }
 }

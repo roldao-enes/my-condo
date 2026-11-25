@@ -115,6 +115,60 @@ pub fn send_due(
     send_due_with(conn, trail, actor, transport, limit, now)
 }
 
+const TEST_EVENT: &str = "email.test";
+
+/// Sends one test message to the configured sender address through `transport`, audits it and
+/// returns the address it went to.
+pub fn send_test_with<T: MailTransport>(
+    trail: &AuditTrail,
+    actor: &AuditActor,
+    transport: T,
+    from: &str,
+) -> Result<String, MailerError> {
+    let result = condo_mail::test_message(from).and_then(|message| {
+        transport.send(&message)?;
+        Ok(message.to_address)
+    });
+    match result {
+        Ok(to) => {
+            trail.succeeded(
+                TEST_EVENT,
+                actor,
+                &format!("sent a test email to {}", crate::audit::quote(&to, 254)),
+                None,
+            );
+            Ok(to)
+        }
+        Err(error) => {
+            trail.failed(
+                TEST_EVENT,
+                actor,
+                "send a test email",
+                AuditFailure {
+                    kind: "error".into(),
+                    reason: format!("the test email was not delivered: {}", error.0),
+                    status: Some(502),
+                },
+                None,
+            );
+            Err(MailerError::Transport(error.0))
+        }
+    }
+}
+
+/// Sends a test email using the saved SMTP settings.
+pub fn send_test(
+    conn: &Connection,
+    trail: &AuditTrail,
+    actor: &AuditActor,
+) -> Result<String, MailerError> {
+    let Some(settings) = settings::load(conn)? else {
+        return Err(MailerError::NotConfigured);
+    };
+    let transport = SmtpTransport::new(&settings).map_err(|e| MailerError::Transport(e.0))?;
+    send_test_with(trail, actor, transport, &settings.from)
+}
+
 /// How many emails are due now (the "dry run").
 pub fn count_due(conn: &Connection, now: DateTime<Utc>) -> condo_db::rusqlite::Result<i64> {
     condo_db::email_queue::count_due(conn, now)
@@ -238,6 +292,34 @@ mod tests {
         assert!(error.to_string().contains("não está configurado"));
         assert_eq!(logged(&trail)[0].record.outcome, AuditOutcome::Failure);
         assert_eq!(count_due(&conn, later()).unwrap(), 1); // still waiting
+    }
+
+    #[test]
+    fn a_test_email_goes_to_the_sender_and_is_audited_either_way() {
+        let (_conn, trail, _dir, actor) = queued();
+        let to =
+            send_test_with(&trail, &actor, Always(Ok(())), "Condo <condo@example.test>").unwrap();
+        assert_eq!(to, "condo@example.test");
+        let error = send_test_with(
+            &trail,
+            &actor,
+            Always(Err(MailError("535 bad credentials".into()))),
+            "condo@example.test",
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("535 bad credentials"));
+        let log = logged(&trail);
+        let outcomes: Vec<_> = log.iter().rev().take(2).map(|e| e.record.outcome).collect();
+        assert_eq!(outcomes, [AuditOutcome::Failure, AuditOutcome::Success]);
+    }
+
+    #[test]
+    fn a_test_email_needs_saved_settings() {
+        let (conn, trail, _dir, actor) = queued();
+        assert!(matches!(
+            send_test(&conn, &trail, &actor),
+            Err(MailerError::NotConfigured)
+        ));
     }
 
     #[test]

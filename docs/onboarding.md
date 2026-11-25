@@ -312,7 +312,6 @@ because it touches an open decision. Effort: **S** about half a day, **M** one t
 
 | # | Win | Why it is easy | Where to look |
 |---|---|---|---|
-| 1 | **"Send test email" button** in Definições | Listed as "not implemented" in the README. The transport and SMTP settings already exist; you add one callback and a notice. Use the `MailRun` seam in tests. | [condo-mail/src/smtp.rs](../crates/condo-mail/src/smtp.rs), `ui/settings.slint`, `controller.rs` |
 | 2 | **Change password** | Listed as not implemented. `auth::hash_password` and `verify_login` exist; add one service function, one dialog, one audit event. | [condo-db/src/auth.rs](../crates/condo-db/src/auth.rs), `session.rs` |
 | 3 | **Add administrator** | Listed as not implemented. `auth::create_admin` already exists and is tested; this is mostly a dialog plus `mutate`. | [condo-db/src/auth.rs:89](../crates/condo-db/src/auth.rs#L89) |
 | 4 | **"Open data folder" button** and an **About box** (version, licence notice, data path) | Pure UI plus `paths.data_dir()`. The settings screen already shows the path. Version comes from `CARGO_PKG_VERSION`. | `ui/settings.slint`, [paths.rs](../crates/condo-app/src/paths.rs) |

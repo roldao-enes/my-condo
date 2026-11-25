@@ -233,6 +233,9 @@ export global Backend {
     // host, port, secure (implicit TLS), user, password, from
     callback save-smtp(string, string, bool, string, string, string);
     callback clear-smtp();
+    // Sends a test message to the saved sender address.
+    callback test-smtp();
+    in property <bool> smtp-testing;
     callback export-backup();
     callback choose-restore();
     callback confirm-restore();

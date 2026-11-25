@@ -75,6 +75,7 @@ pub struct Controller {
     queue_unit: Option<i64>,
     mail: std::sync::Arc<dyn MailRun>,
     sending: Option<announcements::Sending>,
+    mail_test: Option<announcements::TestingMail>,
     // Updates: how to look for them, the check in progress and what it found.
     updater: std::sync::Arc<dyn UpdateCheck>,
     opener: Box<dyn UrlOpener>,
@@ -185,6 +186,7 @@ impl Controller {
             queue_unit: None,
             mail: std::sync::Arc::new(SmtpRun),
             sending: None,
+            mail_test: None,
             updater: std::sync::Arc::new(SignedCheck::from_release_page()),
             opener: Box::new(NativeOpener),
             update_check: None,
@@ -221,6 +223,11 @@ impl Controller {
     /// Waits for the background delivery run, if any, and shows its result.
     pub fn finish_send(&mut self, ui: &AppWindow) {
         self.poll_send(ui, true);
+    }
+
+    /// Waits for the background test email, if any, and shows its result.
+    pub fn finish_mail_test(&mut self, ui: &AppWindow) {
+        self.poll_mail_test(ui, true);
     }
 
     /// Replaces the system clipboard (tests use a recording one).
@@ -383,6 +390,7 @@ impl Controller {
         self.keep_dialog = false;
         self.ann_open = None;
         self.sending = None;
+        self.mail_test = None;
         self.clear_updates(ui);
         let backend = ui.global::<Backend>();
         backend.set_screen("login".into());
@@ -1280,6 +1288,7 @@ pub fn attach(ui: &AppWindow, controller: Controller) -> Rc<RefCell<Controller>>
             from.as_str()
         )
     ));
+    on!(on_test_smtp, |c, ui| c.test_smtp(&ui));
     on!(on_clear_smtp, |c, ui| c.clear_smtp(&ui));
     on!(on_export_backup, |c, ui| c.export_backup(&ui));
     on!(on_choose_restore, |c, ui| c.choose_restore(&ui));

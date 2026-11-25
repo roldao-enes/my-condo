@@ -45,6 +45,18 @@ impl MailRun for Run {
     ) -> Result<SendSummary, MailerError> {
         send_due_with(conn, trail, actor, Transport(self.0.clone()), 100, now)
     }
+
+    fn send_test(
+        &self,
+        conn: &Connection,
+        trail: &AuditTrail,
+        actor: &AuditActor,
+    ) -> Result<String, MailerError> {
+        let from = condo_mail::settings::load(conn)?
+            .map(|s| s.from)
+            .ok_or(MailerError::NotConfigured)?;
+        condo_app::mailer::send_test_with(trail, actor, Transport(self.0.clone()), &from)
+    }
 }
 
 fn onboard(h: &Harness, unit_index: i32, name: &str, email: &str) {
@@ -247,4 +259,35 @@ fn drafting_queueing_and_sending_announcements() {
     ] {
         assert!(log.contains(event), "audit log lacks {event}");
     }
+}
+
+#[test]
+fn sending_a_test_email_from_settings() {
+    let h = Harness::fresh();
+    let fake = Arc::new(Fake::default());
+    h.controller
+        .borrow_mut()
+        .set_mail_run(Arc::new(Run(fake.clone())));
+    setup_admin(&h);
+    h.tall();
+    h.click("Definições");
+
+    // Nothing to test until the email is configured.
+    assert!(!h.exists("Enviar email de teste"));
+    h.type_into("Servidor SMTP", "smtp.example.test");
+    h.type_into("Porta", "587");
+    h.type_into("Remetente", "Condomínio <condo@example.test>");
+    h.click("Guardar email");
+    assert!(h.backend().get_smtp_configured());
+
+    h.click("Enviar email de teste");
+    assert!(h.backend().get_smtp_testing());
+    h.controller.borrow_mut().finish_mail_test(&h.ui);
+    assert!(!h.backend().get_smtp_testing());
+    assert_eq!(h.backend().get_notice_kind().as_str(), "success");
+    assert!(h.notice().contains("condo@example.test"), "{}", h.notice());
+    let sent = fake.sent.lock().unwrap().clone();
+    assert_eq!(sent.len(), 1);
+    assert_eq!(sent[0].to_address, "condo@example.test");
+    assert!(h.audit_log().contains("email.test"));
 }
