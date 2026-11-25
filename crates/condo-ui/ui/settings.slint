@@ -115,6 +115,13 @@ export component SettingsPage inherits VerticalLayout {
                         spacing: 10px;
                         alignment: end;
                         if Backend.smtp-configured: AppButton {
+                            text: Backend.smtp-testing ? "A enviar…" : "Enviar email de teste";
+                            enabled: !Backend.smtp-testing;
+                            clicked => {
+                                Backend.test-smtp();
+                            }
+                        }
+                        if Backend.smtp-configured: AppButton {
                             text: "Remover configuração";
                             clicked => {
                                 Backend.clear-smtp();

@@ -10,7 +10,7 @@ Europe/Lisbon time zone.
 > **Status:** the app is feature-complete for residency, finances, announcements and
 > settings. Packages build locally on macOS and Ubuntu/Debian; Windows and Linux have not yet been
 > run on real machines. Not implemented yet: code signing/notarisation, a Windows installer,
-> "send test email", change password and add administrator.
+> change password and add administrator.
 >
 > The finance features are a management aid, not a certified accounting or statutory-notice system.
 
@@ -38,7 +38,7 @@ Europe/Lisbon time zone.
 
 **Announcements (Comunicados)**
 - Drafts, with a recipient snapshot taken when an announcement is queued.
-- SMTP email delivery through a queue with retries and per-attempt history.
+- SMTP email delivery through a queue with retries and per-attempt history. Works with any relay, including the free tiers of hosted services (Brevo, SMTP2GO, Mailjet): create an SMTP key there, enter it in Definições and press "Enviar email de teste", which sends a message to the sender address.
 
 **Data safety**
 - Every change runs in one transaction together with its audit row.

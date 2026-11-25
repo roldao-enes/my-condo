@@ -28,6 +28,12 @@ pub struct Sending {
     manual: bool,
 }
 
+/// A test email in progress (Definições). The error keeps the server's own words, because the
+/// point of the test is to tell the administrator what is wrong with the settings.
+pub struct TestingMail {
+    result: Receiver<Result<String, MailerError>>,
+}
+
 fn mailer_message(error: &MailerError) -> String {
     match error {
         MailerError::NotConfigured => {
@@ -247,6 +253,63 @@ impl Controller {
         ui.global::<Backend>().set_ann_sending(true);
     }
 
+    /// Sends one test message to the configured sender, on a background thread.
+    pub fn test_smtp(&mut self, ui: &AppWindow) {
+        if self.mail_test.is_some() || self.session.is_none() {
+            return;
+        }
+        let (tx, rx) = mpsc::channel();
+        let (database, audit_dir) = (self.paths.database(), self.paths.audit_dir());
+        let (mail, actor) = (self.mail.clone(), self.actor());
+        std::thread::spawn(move || {
+            let outcome = (|| {
+                let conn =
+                    condo_db::open(&database).map_err(|e| MailerError::Transport(e.to_string()))?;
+                let trail = AuditTrail::open(&audit_dir, DEFAULT_MAX_BYTES)
+                    .map_err(|e| MailerError::Transport(e.to_string()))?;
+                mail.send_test(&conn, &trail, &actor)
+            })();
+            let _ = tx.send(outcome);
+        });
+        self.mail_test = Some(TestingMail { result: rx });
+        ui.global::<Backend>().set_smtp_testing(true);
+    }
+
+    /// Picks up the result of a test email. With `wait`, blocks until it finishes.
+    pub fn poll_mail_test(&mut self, ui: &AppWindow, wait: bool) {
+        let Some(testing) = &self.mail_test else {
+            return;
+        };
+        let outcome = if wait {
+            testing.result.recv().ok()
+        } else {
+            match testing.result.try_recv() {
+                Ok(outcome) => Some(outcome),
+                Err(TryRecvError::Empty) => return,
+                Err(TryRecvError::Disconnected) => None,
+            }
+        };
+        self.mail_test = None;
+        ui.global::<Backend>().set_smtp_testing(false);
+        match outcome {
+            Some(Ok(to)) => self.notice(
+                ui,
+                "success",
+                &format!("Email de teste enviado para {to}. Verifique a caixa de entrada."),
+            ),
+            Some(Err(MailerError::Transport(detail))) => self.notice(
+                ui,
+                "error",
+                &format!(
+                    "Não foi possível enviar o email de teste: {}",
+                    detail.chars().take(300).collect::<String>()
+                ),
+            ),
+            Some(Err(error)) => self.notice(ui, "error", &mailer_message(&error)),
+            None => self.notice(ui, "error", UNEXPECTED),
+        }
+    }
+
     /// Picks up the result of a finished delivery run. With `wait`, blocks until it finishes.
     pub fn poll_send(&mut self, ui: &AppWindow, wait: bool) {
         let Some(sending) = &self.sending else {
@@ -339,6 +402,9 @@ pub fn attach(ui: &AppWindow, controller: &Rc<RefCell<Controller>>) -> Vec<Timer
     };
     vec![
         tick(Duration::from_millis(250), |c, ui| c.poll_send(ui, false)),
+        tick(Duration::from_millis(250), |c, ui| {
+            c.poll_mail_test(ui, false)
+        }),
         tick(AUTO_SEND_EVERY, |c, ui| c.auto_send(ui)),
     ]
 }

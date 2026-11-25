@@ -16,6 +16,14 @@ pub trait MailRun: Send + Sync {
         actor: &AuditActor,
         now: DateTime<Utc>,
     ) -> Result<SendSummary, MailerError>;
+
+    /// Sends one test message to the configured sender; returns the address it went to.
+    fn send_test(
+        &self,
+        conn: &Connection,
+        trail: &AuditTrail,
+        actor: &AuditActor,
+    ) -> Result<String, MailerError>;
 }
 
 /// Sends through the SMTP server saved in the settings.
@@ -30,5 +38,14 @@ impl MailRun for SmtpRun {
         now: DateTime<Utc>,
     ) -> Result<SendSummary, MailerError> {
         mailer::send_due(conn, trail, actor, mailer::MAX_PER_RUN, now)
+    }
+
+    fn send_test(
+        &self,
+        conn: &Connection,
+        trail: &AuditTrail,
+        actor: &AuditActor,
+    ) -> Result<String, MailerError> {
+        mailer::send_test(conn, trail, actor)
     }
 }
