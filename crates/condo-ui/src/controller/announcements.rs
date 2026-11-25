@@ -7,6 +7,7 @@ use std::time::Duration;
 
 use condo_app::audit::{quote, AuditTrail, DEFAULT_MAX_BYTES};
 use condo_app::mailer::MailerError;
+use condo_core::templates::{unfilled_placeholders, TEMPLATES};
 use condo_db::announcements;
 use condo_db::ServiceError;
 use condo_mail::{settings as smtp_settings, SendSummary};
@@ -383,6 +384,19 @@ pub fn attach(ui: &AppWindow, controller: &Rc<RefCell<Controller>>) -> Vec<Timer
         .open_new_announcement(&ui));
     on!(on_create_announcement, |c, ui, subject, body| c
         .create_announcement(&ui, subject.as_str(), body.as_str()));
+    backend.set_template_names(strings(
+        std::iter::once("Sem modelo")
+            .chain(TEMPLATES.iter().map(|t| t.name))
+            .map(str::to_owned),
+    ));
+    let pick = |index: i32| {
+        usize::try_from(index - 1)
+            .ok()
+            .and_then(|i| TEMPLATES.get(i))
+    };
+    backend.on_template_subject(move |i| pick(i).map_or("", |t| t.subject).into());
+    backend.on_template_body(move |i| pick(i).map_or("", |t| t.body).into());
+    backend.on_template_placeholders(|text| unfilled_placeholders(text.as_str()).join(", ").into());
     on!(on_ask_queue, |c, ui, index| c.ask_queue(&ui, index));
     on!(on_confirm_queue, |c, ui| c.confirm_queue(&ui));
     on!(on_send_now, |c, ui| c.send_now(&ui));
