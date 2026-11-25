@@ -38,7 +38,7 @@ Europe/Lisbon time zone.
 
 **Announcements (Comunicados)**
 - Drafts, with a recipient snapshot taken when an announcement is queued.
-- SMTP email delivery through a queue with retries and per-attempt history. Works with any relay, including the free tiers of hosted services (Brevo, SMTP2GO, Mailjet): create an SMTP key there, enter it in Definições and press "Enviar email de teste", which sends a message to the sender address.
+- SMTP email delivery through a queue with retries and per-attempt history. Works with any relay, including the free tiers of hosted services (Brevo, SMTP2GO, Mailjet), or Gmail itself with an app password (the "Usar Gmail" and "Usar Brevo" buttons fill in the server and port): create an SMTP key there, enter it in Definições and press "Enviar email de teste", which sends a message to the sender address.
 
 **Data safety**
 - Every change runs in one transaction together with its audit row.

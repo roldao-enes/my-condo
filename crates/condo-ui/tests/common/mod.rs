@@ -302,7 +302,7 @@ impl Harness {
     pub fn tall(&self) {
         self.ui
             .window()
-            .set_size(slint::PhysicalSize::new(1360, 1500));
+            .set_size(slint::PhysicalSize::new(1360, 1700));
     }
 }
 

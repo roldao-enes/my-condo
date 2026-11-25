@@ -52,6 +52,37 @@ export component SettingsPage inherits VerticalLayout {
 
                     HorizontalLayout {
                         spacing: 12px;
+                        alignment: start;
+                        AppButton {
+                            text: "Usar Gmail";
+                            clicked => {
+                                host.text = "smtp.gmail.com";
+                                port.text = "587";
+                                root.secure = false;
+                            }
+                        }
+
+                        AppButton {
+                            text: "Usar Brevo";
+                            clicked => {
+                                host.text = "smtp-relay.brevo.com";
+                                port.text = "587";
+                                root.secure = false;
+                            }
+                        }
+
+                        Text {
+                            vertical-alignment: center;
+                            text: "Preenche servidor e porta. Gmail: use uma palavra-passe de aplicação.";
+                            font-size: 13px;
+                            color: Theme.muted;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
+                    HorizontalLayout {
+                        spacing: 12px;
                         host := TextField {
                             horizontal-stretch: 1;
                             label: "Servidor SMTP";
