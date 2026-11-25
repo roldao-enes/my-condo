@@ -28,7 +28,7 @@ zip and a disk image holding the app and an Applications shortcut.
 ## Ubuntu / Debian
 
 `./scripts/package-linux.sh` makes the `.deb` (the executable, an application-menu entry and the
-icon). Install with `sudo apt install ./meu-condominio_0.1.0_amd64.deb`; remove with
+icon). Install with `sudo apt install ./meu-condominio_0.1.1_amd64.deb`; remove with
 `sudo apt remove meu-condominio`. Its dependencies are read from the executable itself plus the
 display/graphics libraries it loads at run time.
 

@@ -1,6 +1,6 @@
 [package]
 name = "condo-core"
-version = "0.1.0"
+version = "0.1.1"
 description = "Pure domain logic for Meu Condominio (no I/O)"
 edition.workspace = true
 rust-version.workspace = true
