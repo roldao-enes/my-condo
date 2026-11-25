@@ -41,12 +41,16 @@ snapshots the database before any schema upgrade, see `docs/packaging.md`.)
 
 Releases are automatic (see `docs/contributing.md`): when a push to `main` contains `fix:` (PATCH),
 `feat:` (MINOR) or breaking (MAJOR) commits since the last `vX.Y.Z` tag, the `Release` workflow
-bumps the version in the Cargo files, commits `chore(release): vX.Y.Z`, tags it and starts the
-Desktop workflow on that tag. CI then builds and tests every platform, creates the release with the
-installers plus `latest.json` and `latest.json.sig`, and checks the signature with the committed
-public key before publishing. It stops if the tag differs from the Cargo version or the secret is
-missing. The `Release` workflow needs permission to push to `main` (if branch protection is on,
-allow `github-actions[bot]` to bypass it).
+bumps the version in the Cargo files, commits `chore(release): vX.Y.Z` and pushes it with the tag.
+The tag push starts the Desktop workflow: CI builds and tests every platform, creates the release
+with the installers plus `latest.json` and `latest.json.sig`, and checks the signature with the
+committed public key before publishing. It stops if the tag differs from the Cargo version or the
+secret is missing.
+
+The `Release` workflow pushes to `main` with a **deploy key**: the private half is the repository
+secret `RELEASE_DEPLOY_KEY`, the public half a deploy key with write access, and **Deploy keys**
+is on the `main` ruleset's bypass list (`GITHUB_TOKEN` cannot be added there, and its pushes would
+not start the Desktop workflow). Rotate it like any key: generate a new pair, replace both halves.
 
 Merges to `main` still publish a `v<version>-build.<n>` release for testing; those are marked
 **pre-release**, so the address apps check (`.../releases/latest/download/latest.json`) ignores them.
