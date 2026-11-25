@@ -291,3 +291,33 @@ fn sending_a_test_email_from_settings() {
     assert_eq!(sent[0].to_address, "condo@example.test");
     assert!(h.audit_log().contains("email.test"));
 }
+
+#[test]
+fn the_provider_presets_fill_the_server_and_port() {
+    let h = Harness::fresh();
+    setup_admin(&h);
+    h.tall();
+    h.click("Definições");
+    h.click("TLS direto");
+    h.click("Usar Gmail");
+    h.type_into("Remetente", "Condomínio <condo@example.test>");
+    h.click("Guardar email");
+    let saved = condo_mail::settings::load(&condo_db::open(&h.paths.database()).unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (saved.host.as_str(), saved.port, saved.secure),
+        ("smtp.gmail.com", 587, false)
+    );
+
+    h.click("TLS direto");
+    h.click("Usar Brevo");
+    h.click("Guardar email");
+    let saved = condo_mail::settings::load(&condo_db::open(&h.paths.database()).unwrap())
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        (saved.host.as_str(), saved.port, saved.secure),
+        ("smtp-relay.brevo.com", 587, false)
+    );
+}
