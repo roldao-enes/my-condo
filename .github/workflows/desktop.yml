@@ -1,7 +1,8 @@
 # Meu Condominio desktop app: check on every OS, then package it for each OS with the same
 # scripts you can run locally (see docs/packaging.md). On every push to main (a merge) the checks
 # run first, then the packages of all three OSs are attached to a new (pre-)release; a pushed v*
-# tag makes a real, signed release (docs/updates.md).
+# tag makes a real, signed release (docs/updates.md); the Release workflow creates that tag and
+# starts this one on it.
 name: Desktop
 
 on:
@@ -117,7 +118,7 @@ jobs:
     name: Release
     needs: [check, licenses, package]
     # Only when every check and every package succeeded, on a merge to main (or a pushed v* tag).
-    if: ${{ !cancelled() && needs.check.result == 'success' && needs.licenses.result == 'success' && needs.package.result == 'success' && github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')) }}
+    if: ${{ !cancelled() && needs.check.result == 'success' && needs.licenses.result == 'success' && needs.package.result == 'success' && ((github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'workflow_dispatch' && startsWith(github.ref, 'refs/tags/v'))) }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
