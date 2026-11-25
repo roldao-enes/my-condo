@@ -1,7 +1,7 @@
 # Meu Condominio desktop app: check on every OS, then package it for each OS with the same
 # scripts you can run locally (see docs/packaging.md). On every push to main (a merge) the checks
 # run first, then the packages of all three OSs are attached to a new (pre-)release; a pushed v*
-# tag makes a real, signed release (docs/updates.md).
+# tag makes a real, signed release (docs/updates.md); the Release workflow pushes that tag.
 name: Desktop
 
 on:

@@ -1,0 +1,42 @@
+# On every push to main: work out the next version from the Conventional Commits since the last
+# release (fix -> PATCH, feat -> MINOR, breaking -> MAJOR; docs/chore/ci/... -> no release), commit
+# the bump and tag it. The tag push starts the Desktop workflow, which builds and publishes the
+# signed release (docs/updates.md). It pushes with a deploy key (secret RELEASE_DEPLOY_KEY, write
+# access) that is on the main ruleset's bypass list: GITHUB_TOKEN can't bypass rulesets, and its
+# pushes would not start the Desktop workflow either.
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ssh-key: ${{ secrets.RELEASE_DEPLOY_KEY }}
+      - name: Bump and tag the release
+        run: |
+          set -euo pipefail
+          version="$(scripts/release/next-version.sh)"
+          if [[ -z "$version" ]]; then
+            echo "No fix/feat/breaking commits since the last release: nothing to release."
+            exit 0
+          fi
+          echo "Releasing v$version"
+          scripts/release/bump.sh "$version"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): v$version"
+          git tag -a "v$version" -m "v$version"
+          git push --atomic origin HEAD:main "v$version"
