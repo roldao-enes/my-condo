@@ -1,6 +1,6 @@
 [package]
 name = "condo-audit"
-version = "0.2.0"
+version = "0.3.0"
 description = "Append-only, size-rotated JSON Lines audit log for Meu Condominio"
 edition.workspace = true
 rust-version.workspace = true
