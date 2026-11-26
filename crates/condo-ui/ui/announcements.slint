@@ -366,6 +366,19 @@ export component NewAnnouncementDialog inherits Modal {
         subject.focus-field();
     }
 
+    template := SelectField {
+        label: "Modelo";
+        placeholder-first: true;
+        model: Backend.template-names;
+        selected(index) => {
+            // "Sem modelo" leaves what was typed alone; a template replaces it.
+            if (index > 0) {
+                subject.text = Backend.template-subject(index);
+                message.text = Backend.template-body(index);
+            }
+        }
+    }
+
     subject := TextField {
         label: "Assunto";
         placeholder: "Ex.: Corte de água na sexta-feira";
@@ -377,6 +390,14 @@ export component NewAnnouncementDialog inherits Modal {
     message := TextArea {
         label: "Mensagem";
         placeholder: "Escreva a mensagem para os residentes...";
+        area-height: 220px;
+    }
+
+    if subject.text + message.text != "" && Backend.template-placeholders(subject.text + message.text) != "": Text {
+        text: "Por preencher: " + Backend.template-placeholders(subject.text + message.text);
+        font-size: 13px;
+        color: Theme.muted;
+        wrap: word-wrap;
     }
 
     if Backend.form-error != "": InlineError {

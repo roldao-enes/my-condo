@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, Utc};
-use common::{add_unit, rows, setup_admin, Harness};
+use common::{add_unit, rows, setup_admin, strings, Harness};
 use condo_app::audit::AuditTrail;
 use condo_app::mailer::{send_due_with, MailerError};
 use condo_audit::AuditActor;
@@ -319,5 +319,47 @@ fn the_provider_presets_fill_the_server_and_port() {
     assert_eq!(
         (saved.host.as_str(), saved.port, saved.secure),
         ("smtp-relay.brevo.com", 587, false)
+    );
+}
+
+#[test]
+fn the_new_announcement_dialog_offers_the_meeting_and_quarterly_fee_templates() {
+    let h = Harness::fresh();
+    setup_admin(&h);
+    h.click("Comunicados");
+    h.click("Novo comunicado");
+    assert!(h.exists("Modelo"));
+
+    let backend = h.backend();
+    assert_eq!(
+        strings(backend.get_template_names()),
+        [
+            "Sem modelo",
+            "Convocatória de assembleia geral",
+            "Cobrança da quota trimestral"
+        ]
+    );
+    // "Sem modelo" has no text, so choosing it never wipes what was typed.
+    assert_eq!(backend.invoke_template_subject(0), "");
+    assert_eq!(backend.invoke_template_body(0), "");
+
+    let meeting = backend.invoke_template_body(1);
+    assert!(meeting.contains("Ordem de trabalhos"));
+    assert!(backend
+        .invoke_template_subject(1)
+        .starts_with("Convocatória"));
+    let fee = backend.invoke_template_body(2);
+    assert!(fee.contains("IBAN"));
+    assert!(backend.invoke_template_subject(2).starts_with("Quota"));
+
+    // The hint lists what is still to be filled in, and goes away once it is.
+    let left = backend.invoke_template_placeholders(fee.clone());
+    assert!(
+        left.contains("[VALOR]") && left.contains("[IBAN]"),
+        "{left}"
+    );
+    assert_eq!(
+        backend.invoke_template_placeholders("Tudo pronto.".into()),
+        ""
     );
 }

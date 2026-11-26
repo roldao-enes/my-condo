@@ -8,6 +8,7 @@ pub mod report;
 pub mod retry;
 pub mod statement;
 pub mod tags;
+pub mod templates;
 pub mod throttle;
 
 /// A domain validation failure. The message is user-facing (Portuguese).

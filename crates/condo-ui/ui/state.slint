@@ -331,6 +331,13 @@ export global Backend {
     callback open-announcement(int);
     callback open-new-announcement();
     callback create-announcement(string, string);
+    // Ready-made texts for the new-announcement dialog. Index 0 is "no template" (empty text);
+    // 1.. match `template-names`.
+    in property <[string]> template-names;
+    pure callback template-subject(int) -> string;
+    pure callback template-body(int) -> string;
+    // The `[PLACEHOLDERS]` still in the text, comma-separated; empty when there are none.
+    pure callback template-placeholders(string) -> string;
     // Index into `ann-unit-options`; asks for confirmation first.
     callback ask-queue(int);
     in property <string> queue-target-text;
