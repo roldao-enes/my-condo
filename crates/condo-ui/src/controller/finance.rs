@@ -11,7 +11,7 @@ use condo_core::locale::{amount_input, date, money, parse_input_date};
 use condo_core::report::{
     annual_report, financial_report, report_clipboard, report_document, ExpenseCategory,
 };
-use condo_core::statement::parse_money;
+use condo_core::statement::{decode_statement, parse_money};
 use condo_core::tags::{MatchType, TagCategory};
 use condo_db::finance::{self, NewCharge, TagInput};
 use condo_db::ServiceError;
@@ -223,10 +223,11 @@ impl Controller {
                 if meta.len() > MAX_STATEMENT_BYTES {
                     Err(())
                 } else {
-                    std::fs::read_to_string(&path).map_err(|_| ())
+                    std::fs::read(&path).map_err(|_| ())
                 }
             })
             .map_err(|()| invalid("Selecione um ficheiro CSV válido (máx. 2 MB)."))
+            .and_then(|bytes| decode_statement(&bytes).map_err(ServiceError::from))
             .and_then(|content| finance::import_statement(&mut self.conn, user_id, &content));
         match read {
             Ok(summary) => {
