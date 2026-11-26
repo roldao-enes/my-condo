@@ -130,12 +130,49 @@ fn split_rows(content: &str) -> Vec<Vec<String>> {
 fn is_header_label(value: &str) -> bool {
     matches!(
         value.to_lowercase().as_str(),
-        "data" | "date" | "booking date"
+        "data" | "date" | "booking date" | "data mov."
     )
 }
 
+/// Decodes statement bytes: UTF-8 when valid, otherwise ISO-8859-1 (what bank "Excel"
+/// exports use). Rejects real binary Excel workbooks, which are not text.
+pub fn decode_statement(bytes: &[u8]) -> Result<String, DomainError> {
+    const OLE2_MAGIC: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
+    if bytes.starts_with(OLE2_MAGIC) || bytes.starts_with(b"PK\x03\x04") {
+        return Err(DomainError::new(
+            "Ficheiro Excel binário não suportado; exporte o extrato como texto (CSV/TSV).",
+        ));
+    }
+    Ok(match std::str::from_utf8(bytes) {
+        Ok(text) => text.to_owned(),
+        Err(_) => bytes.iter().map(|&b| char::from(b)).collect(),
+    })
+}
+
+/// Bank exports (e.g. Net24 `.xls`, which is really tab-separated text) put an account
+/// summary before the movements and pad every row with empty trailing cells. When a
+/// `DATA MOV.` header line is present, drops everything before it and the padding.
+fn strip_bank_export_wrapper(content: &str) -> String {
+    let content = content.strip_prefix('\u{feff}').unwrap_or(content);
+    let is_header = |line: &str| {
+        line.split('\t')
+            .next()
+            .is_some_and(|cell| cell.trim().eq_ignore_ascii_case("data mov."))
+    };
+    if !content.lines().any(is_header) {
+        return content.to_owned();
+    }
+    content
+        .lines()
+        .skip_while(|line| !is_header(line))
+        .map(|line| line.trim_end_matches(|c: char| c == '\t' || c.is_whitespace()))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 pub fn parse_statement(content: &str) -> Result<Vec<StatementRow>, DomainError> {
-    let mut rows = split_rows(content);
+    let content = strip_bank_export_wrapper(content);
+    let mut rows = split_rows(&content);
     if rows.is_empty() || rows.len() > MAX_ROWS {
         return Err(DomainError::new("Importe entre 1 e 10000 movimentos."));
     }
@@ -251,5 +288,35 @@ mod tests {
                 .is_err()
         );
         assert!(parse_statement("Date\tVal\tDesc\tAmt\tBal").is_err());
+    }
+
+    const NET24: &[u8] = b"Balc\xe3o\tProduto da conta\tMoeda\r\n\
+        CONDOMINIO N\xba 1\tMovimentos\r\n\
+        3.851,92\t0,00\t0,00\t0,00\t\t\r\n\
+        DATA MOV.\tDATA VALOR\tDESCRI\xc7\xc3O\tIMPORT\xc2NCIA\tSALDO CONTABIL\xcdSTICO\t\r\n\
+        2025-10-02\t2025-10-02\tCOMISS\xc3O MANUTEN\xc7\xc3O DE CONTA\t-9,50\t3.786,67\t\r\n\
+        2026-10-01\t2026-10-02\tCOMISS. EXTRATO NET24\t-1,00\t3.785,67\t\r\n\
+        \t\t\t\t\t\r\n";
+
+    #[test]
+    fn imports_a_net24_xls_export_with_preamble_latin1_and_padding() {
+        let rows = parse_statement(&decode_statement(NET24).unwrap()).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].date, d(2025, 10, 2));
+        assert_eq!(
+            rows[0].description,
+            "COMISS\u{c3}O MANUTEN\u{c7}\u{c3}O DE CONTA"
+        );
+        assert_eq!(rows[0].amount, -950);
+        assert_eq!(rows[0].balance, 378_667);
+        assert_eq!(rows[1].value_date, d(2026, 10, 2));
+    }
+
+    #[test]
+    fn decode_prefers_utf8_and_rejects_binary_workbooks() {
+        assert_eq!(decode_statement("ção".as_bytes()).unwrap(), "ção");
+        assert_eq!(decode_statement(b"\xe7").unwrap(), "ç");
+        assert!(decode_statement(&[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1, 0]).is_err());
+        assert!(decode_statement(b"PK\x03\x04rest").is_err());
     }
 }

@@ -73,7 +73,7 @@ impl FileDialogs for NativeDialogs {
     fn open_statement(&self) -> Option<PathBuf> {
         rfd::FileDialog::new()
             .set_title("Escolher extrato bancário")
-            .add_filter("Extrato bancário", &["csv", "tsv", "txt"])
+            .add_filter("Extrato bancário", &["csv", "tsv", "txt", "xls"])
             .pick_file()
     }
 
