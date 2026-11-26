@@ -1,6 +1,6 @@
 [package]
 name = "condo-db"
-version = "0.4.0"
+version = "0.5.0"
 description = "SQLite persistence and transactional services for Meu Condominio"
 edition.workspace = true
 rust-version.workspace = true
