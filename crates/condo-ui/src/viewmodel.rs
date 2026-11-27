@@ -27,6 +27,7 @@ pub struct UnitView {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RelationView {
     pub id: i64,
+    pub person_id: i64,
     pub name: String,
     pub initials: String,
     pub contact: String,
@@ -88,6 +89,7 @@ pub fn unit_view(dir: &Directory, unit: &Unit) -> UnitView {
 pub fn relation_view(r: &Relationship) -> RelationView {
     RelationView {
         id: r.id,
+        person_id: r.person_id,
         name: r.name.clone(),
         initials: initials(&r.name),
         contact: r
@@ -227,27 +229,27 @@ pub fn units_page(dir: &Directory, query: &str) -> UnitsPage {
 pub struct PeoplePage {
     pub subtitle: String,
     pub rows: Vec<RelationView>,
+    /// Active and past relationships of the shown role.
     pub active_count: usize,
     pub history_count: usize,
+    /// Active owners and active residents, for the tab labels.
+    pub owners_count: usize,
+    pub residents_count: usize,
     pub empty_title: String,
     pub empty_text: String,
 }
 
-pub fn people_page(dir: &Directory, query: &str, history: bool) -> PeoplePage {
-    let active_count = dir
-        .relationships
-        .iter()
-        .filter(|r| r.end_date.is_none())
-        .count();
-    let distinct: HashSet<i64> = dir
-        .relationships
-        .iter()
-        .filter(|r| r.end_date.is_none())
-        .map(|r| r.person_id)
-        .collect();
-    let rows: Vec<RelationView> = dir
-        .relationships
-        .iter()
+/// One tab of the people page: the owners, or the residents, active or past.
+pub fn people_page(dir: &Directory, query: &str, history: bool, role: UnitRole) -> PeoplePage {
+    let active_of = |role: UnitRole| {
+        dir.relationships
+            .iter()
+            .filter(move |r| r.role == role && r.end_date.is_none())
+            .count()
+    };
+    let in_tab = || dir.relationships.iter().filter(|r| r.role == role);
+    let active_count = in_tab().filter(|r| r.end_date.is_none()).count();
+    let rows: Vec<RelationView> = in_tab()
         .filter(|r| r.end_date.is_some() == history)
         .filter(|r| {
             matches(
@@ -263,32 +265,37 @@ pub fn people_page(dir: &Directory, query: &str, history: bool) -> PeoplePage {
         .map(relation_view)
         .collect();
     let searching = !normalize_name(query).is_empty();
+    let (noun, none_yet) = match role {
+        UnitRole::Owner => ("proprietário", "Indique o proprietário de uma fração."),
+        UnitRole::Resident => ("residente", "Indique quem vive numa fração."),
+    };
     let (empty_title, empty_text) = match (searching, history) {
-        (true, _) => ("Nenhuma pessoa encontrada.", "Experimente outra pesquisa."),
+        (true, _) => (
+            "Nenhuma pessoa encontrada.".to_owned(),
+            "Experimente outra pesquisa.".to_owned(),
+        ),
         (false, true) => (
-            "Sem saídas registadas.",
-            "As relações encerradas ficam guardadas aqui.",
+            "Sem saídas registadas.".to_owned(),
+            "As relações encerradas ficam guardadas aqui.".to_owned(),
         ),
         (false, false) => (
-            "Ainda não existem pessoas registadas.",
-            "Indique o proprietário de uma fração.",
+            format!("Ainda não existem {noun}s registados."),
+            none_yet.to_owned(),
         ),
     };
     PeoplePage {
-        subtitle: format!(
-            "{} {} com relação ativa",
-            distinct.len(),
-            if distinct.len() == 1 {
-                "pessoa"
-            } else {
-                "pessoas"
-            }
-        ),
-        history_count: dir.relationships.len() - active_count,
+        subtitle: if active_count == 1 {
+            format!("1 {noun} ativo")
+        } else {
+            format!("{active_count} {noun}s ativos")
+        },
+        history_count: in_tab().count() - active_count,
         active_count,
+        owners_count: active_of(UnitRole::Owner),
+        residents_count: active_of(UnitRole::Resident),
         rows,
-        empty_title: empty_title.to_owned(),
-        empty_text: empty_text.to_owned(),
+        empty_title,
+        empty_text,
     }
 }
 
@@ -554,26 +561,40 @@ mod tests {
     }
 
     #[test]
-    fn people_split_into_active_and_history_with_counts() {
+    fn people_split_into_owner_and_resident_tabs_with_history() {
         let dir = directory();
-        let active = people_page(&dir, "", false);
-        assert_eq!((active.active_count, active.history_count), (4, 1));
+        let owners = people_page(&dir, "", false, UnitRole::Owner);
         assert_eq!(
-            active
+            (owners.active_count, owners.history_count),
+            (2, 1),
+            "tab counts"
+        );
+        assert_eq!((owners.owners_count, owners.residents_count), (2, 2));
+        assert_eq!(
+            owners
                 .rows
                 .iter()
                 .map(|r| (r.name.as_str(), r.role.as_str()))
                 .collect::<Vec<_>>(),
             [
-                ("Pedro Costa", "Residente"),
                 ("Maria Silva", "Proprietário"),
-                ("Pedro Costa", "Residente"),
-                ("Rui Carvalho", "Proprietário"),
+                ("Rui Carvalho", "Proprietário")
             ]
         );
-        // Pedro lives in two units but is one person.
-        assert_eq!(active.subtitle, "3 pessoas com relação ativa");
-        let history = people_page(&dir, "", true);
+        assert_eq!(owners.subtitle, "2 proprietários ativos");
+
+        let residents = people_page(&dir, "", false, UnitRole::Resident);
+        assert_eq!((residents.active_count, residents.history_count), (2, 0));
+        assert_eq!(
+            residents
+                .rows
+                .iter()
+                .map(|r| (r.name.as_str(), r.role.as_str()))
+                .collect::<Vec<_>>(),
+            [("Pedro Costa", "Residente"), ("Pedro Costa", "Residente")]
+        );
+
+        let history = people_page(&dir, "", true, UnitRole::Owner);
         assert_eq!(history.rows.len(), 1);
         assert_eq!(
             (
@@ -585,38 +606,51 @@ mod tests {
         );
         assert_eq!(history.rows[0].role, "Proprietário");
         assert_eq!(history.rows[0].contact, "Sem contacto");
+        assert!(people_page(&dir, "", true, UnitRole::Resident)
+            .rows
+            .is_empty());
     }
 
     #[test]
     fn people_search_matches_name_unit_and_email_without_accents() {
         let mut dir = directory();
         dir.relationships[2].email = Some("maria@example.test".into());
-        let names = |q, h| {
-            people_page(&dir, q, h)
+        let names = |q, h, role| {
+            people_page(&dir, q, h, role)
                 .rows
                 .into_iter()
                 .map(|r| r.name)
                 .collect::<Vec<_>>()
         };
-        assert_eq!(names("MARIA", false), ["Maria Silva"]);
-        assert_eq!(names("example", false), ["Maria Silva"]);
-        assert_eq!(names("r/c", false), ["Pedro Costa", "Rui Carvalho"]);
-        assert_eq!(names("alvaro", true), ["Álvaro Maria"]);
-        assert_eq!(names("alvaro", false), Vec::<String>::new()); // history only shows in history
-        let page = people_page(&dir, "zzz", true);
+        let owner = UnitRole::Owner;
+        assert_eq!(names("MARIA", false, owner), ["Maria Silva"]);
+        assert_eq!(names("example", false, owner), ["Maria Silva"]);
+        assert_eq!(names("r/c", false, owner), ["Rui Carvalho"]);
+        assert_eq!(names("r/c", false, UnitRole::Resident), ["Pedro Costa"]);
+        assert_eq!(names("alvaro", true, owner), ["Álvaro Maria"]);
+        // History only shows in history, and owners never show in the residents tab.
+        assert_eq!(names("alvaro", false, owner), Vec::<String>::new());
+        assert_eq!(
+            names("maria", false, UnitRole::Resident),
+            Vec::<String>::new()
+        );
+        let page = people_page(&dir, "zzz", true, owner);
         assert_eq!(page.empty_title, "Nenhuma pessoa encontrada.");
-        assert_eq!(people_page(&dir, "", true).rows[0].contact, "Sem contacto");
         let nobody = Directory {
             relationships: vec![],
             ..dir.clone()
         };
         assert_eq!(
-            people_page(&nobody, "", true).empty_title,
+            people_page(&nobody, "", true, owner).empty_title,
             "Sem saídas registadas."
         );
         assert_eq!(
-            people_page(&nobody, "", false).empty_title,
-            "Ainda não existem pessoas registadas."
+            people_page(&nobody, "", false, owner).empty_title,
+            "Ainda não existem proprietários registados."
+        );
+        assert_eq!(
+            people_page(&nobody, "", false, UnitRole::Resident).empty_title,
+            "Ainda não existem residentes registados."
         );
     }
 
