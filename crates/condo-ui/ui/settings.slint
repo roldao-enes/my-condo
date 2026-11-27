@@ -2,7 +2,7 @@ import { ScrollView } from "std-widgets.slint";
 import { Theme } from "theme.slint";
 import { Icons } from "icons.slint";
 import { Backend } from "state.slint";
-import { AppButton, TextField, Card, Modal, Segmented, FormActions, InlineError, PageHeading, Checkbox } from "components.slint";
+import { Skeleton, AppButton, TextField, Card, Modal, Segmented, FormActions, InlineError, PageHeading, Checkbox } from "components.slint";
 
 component SectionTitle inherits VerticalLayout {
     in property <string> title;
@@ -37,14 +37,15 @@ export component SettingsPage inherits VerticalLayout {
         vertical-stretch: 1;
         content-height: content.preferred-height;
         content := VerticalLayout {
-            spacing: 16px;
-            padding-right: 4px;
+            spacing: 24px;
+            padding-right: 8px;
+            padding-bottom: 32px;
 
             // --- Email -------------------------------------------------------------------
             Card {
                 VerticalLayout {
-                    padding: 24px;
-                    spacing: 14px;
+                    padding: 32px;
+                    spacing: 18px;
                     SectionTitle {
                         title: "Envio de email";
                         text: Backend.smtp-configured ? "Servidor configurado. Os comunicados podem ser enviados." : "Ainda não configurado. Sem isto, os comunicados não podem ser enviados.";
@@ -172,8 +173,8 @@ export component SettingsPage inherits VerticalLayout {
             // --- Updates -----------------------------------------------------------------
             Card {
                 VerticalLayout {
-                    padding: 24px;
-                    spacing: 14px;
+                    padding: 32px;
+                    spacing: 18px;
                     SectionTitle {
                         title: "Atualizações";
                         text: "Versão instalada: " + Backend.app-version + ". A aplicação consulta, no máximo uma vez por dia, se existe uma versão nova. Não envia dados seus nem do condomínio e nunca instala nada sozinha.";
@@ -200,7 +201,13 @@ export component SettingsPage inherits VerticalLayout {
 
                         VerticalLayout {
                             alignment: center;
-                            Text {
+                            if Backend.update-checking: Skeleton {
+                                width: 180px;
+                                height: 14px;
+                                accessible-role: text;
+                                accessible-label: Backend.update-status;
+                            }
+                            if !Backend.update-checking: Text {
                                 text: Backend.update-status;
                                 font-size: 13px;
                                 color: Theme.muted;
@@ -213,8 +220,8 @@ export component SettingsPage inherits VerticalLayout {
             // --- Backup ------------------------------------------------------------------
             Card {
                 VerticalLayout {
-                    padding: 24px;
-                    spacing: 14px;
+                    padding: 32px;
+                    spacing: 18px;
                     SectionTitle {
                         title: "Cópias de segurança";
                         text: "Todos os dados estão num único ficheiro neste computador. Guarde cópias com regularidade, de preferência noutro disco.";
@@ -251,8 +258,8 @@ export component SettingsPage inherits VerticalLayout {
             // --- Export / import by year -------------------------------------------------
             Card {
                 VerticalLayout {
-                    padding: 24px;
-                    spacing: 14px;
+                    padding: 32px;
+                    spacing: 18px;
                     SectionTitle {
                         title: "Exportar e importar dados";
                         text: "Exporta todos os dados para ficheiros legíveis (JSON): um ficheiro base e um por ano. Importar substitui todos os dados atuais. Os ficheiros incluem contas e palavras-passe: guarde-os num local seguro.";
@@ -282,8 +289,8 @@ export component SettingsPage inherits VerticalLayout {
             // --- Demo data ---------------------------------------------------------------
             if Backend.can-load-demo: Card {
                 VerticalLayout {
-                    padding: 24px;
-                    spacing: 14px;
+                    padding: 32px;
+                    spacing: 18px;
                     SectionTitle {
                         title: "Dados de exemplo";
                         text: "Para experimentar a aplicação: acrescenta frações, proprietários e residentes fictícios. Só está disponível enquanto não houver dados.";

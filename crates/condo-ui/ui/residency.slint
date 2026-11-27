@@ -62,11 +62,15 @@ component SectionHeading inherits HorizontalLayout {
 component UnitCard inherits Rectangle {
     in property <UnitRow> unit;
     callback clicked();
-    height: 150px;
+    height: 176px;
     border-radius: 10px;
     border-width: 1px;
     border-color: Theme.border;
     background: touch.has-hover ? Theme.surface-alt : Theme.surface;
+    drop-shadow-blur: touch.has-hover ? 28px : 14px;
+    drop-shadow-color: touch.has-hover ? Theme.shadow-md : Theme.shadow-sm;
+    drop-shadow-offset-y: touch.has-hover ? 10px : 3px;
+    animate background, drop-shadow-blur, drop-shadow-color, drop-shadow-offset-y { duration: 180ms; easing: ease-out; }
     accessible-role: button;
     accessible-label: "Fração " + root.unit.label;
     accessible-action-default => {
@@ -74,8 +78,8 @@ component UnitCard inherits Rectangle {
     }
 
     VerticalLayout {
-        padding: 16px;
-        spacing: 4px;
+        padding: 22px;
+        spacing: 6px;
         HorizontalLayout {
             Rectangle {
                 width: 40px;
@@ -159,7 +163,7 @@ component UnitCard inherits Rectangle {
 export component OverviewPage inherits ScrollView {
     VerticalLayout {
         padding-right: 8px;
-        spacing: 22px;
+        spacing: 32px;
         PageHeading {
             eyebrow: "O MEU CONDOMÍNIO";
             title: Backend.page-title;
@@ -185,7 +189,7 @@ export component OverviewPage inherits ScrollView {
         }
 
         HorizontalLayout {
-            spacing: 16px;
+            spacing: 24px;
             for stat in Backend.stats: StatTile {
                 label: stat.label;
                 value: stat.value;
@@ -215,13 +219,13 @@ export component OverviewPage inherits ScrollView {
             }
         }
         if Backend.total-units > 0: grid := Rectangle {
-            property <length> gap: 16px;
+            property <length> gap: 24px;
             property <int> rows: Math.ceil(Backend.overview-units.length / 3);
-            height: self.rows * 150px + max(0, self.rows - 1) * self.gap;
+            height: self.rows * 176px + max(0, self.rows - 1) * self.gap;
             for unit[i] in Backend.overview-units: UnitCard {
                 unit: unit;
                 x: Math.mod(i, 3) * (self.width + grid.gap);
-                y: Math.floor(i / 3) * (150px + grid.gap);
+                y: Math.floor(i / 3) * (176px + grid.gap);
                 width: (grid.width - 2 * grid.gap) / 3;
                 clicked => {
                     Backend.open-unit-detail(unit.id);
@@ -238,7 +242,7 @@ export component OverviewPage inherits ScrollView {
         }
 
         if Backend.activity.length == 0: Card {
-            height: 64px;
+            height: 72px;
             HorizontalLayout {
                 alignment: center;
                 spacing: 10px;
@@ -264,7 +268,7 @@ export component OverviewPage inherits ScrollView {
         if Backend.activity.length > 0: Card {
             VerticalLayout {
                 for item[i] in Backend.activity: Rectangle {
-                    height: 60px;
+                    height: 68px;
                     HorizontalLayout {
                         padding-left: 16px;
                         padding-right: 16px;
@@ -328,7 +332,7 @@ export component OverviewPage inherits ScrollView {
 
 // --- Units ---------------------------------------------------------------------------------
 export component UnitsPage inherits VerticalLayout {
-    spacing: 16px;
+    spacing: 24px;
     PageHeading {
         eyebrow: "GESTÃO DO CONDOMÍNIO";
         title: Backend.page-title;
@@ -354,7 +358,7 @@ export component UnitsPage inherits VerticalLayout {
     }
 
     HorizontalLayout {
-        spacing: 14px;
+        spacing: 16px;
         SearchBox {
             placeholder: "Pesquisar fração ou piso...";
             horizontal-stretch: 1;
@@ -433,7 +437,7 @@ export component UnitsPage inherits VerticalLayout {
             ListView {
                 vertical-stretch: 1;
                 for unit in Backend.units: row := Rectangle {
-                    height: 60px;
+                    height: 68px;
                     background: touch.has-hover ? Theme.surface-alt : transparent;
                     accessible-role: button;
                     accessible-label: "Fração " + unit.label;
@@ -539,7 +543,7 @@ export component UnitsPage inherits VerticalLayout {
 
 // --- People --------------------------------------------------------------------------------
 export component PeoplePage inherits VerticalLayout {
-    spacing: 16px;
+    spacing: 24px;
     PageHeading {
         eyebrow: "GESTÃO DO CONDOMÍNIO";
         title: Backend.page-title;
@@ -565,7 +569,7 @@ export component PeoplePage inherits VerticalLayout {
     }
 
     HorizontalLayout {
-        spacing: 14px;
+        spacing: 16px;
         Segmented {
             width: 320px;
             first: "Proprietários";
@@ -658,7 +662,7 @@ export component PeoplePage inherits VerticalLayout {
             ListView {
                 vertical-stretch: 1;
                 for rel in Backend.relationships: row := Rectangle {
-                    height: 66px;
+                    height: 76px;
                     Rectangle {
                         y: parent.height - 1px;
                         height: 1px;
