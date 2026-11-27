@@ -1,6 +1,6 @@
 [package]
 name = "condo-update"
-version = "1.0.0"
+version = "1.1.0"
 description = "Signed update manifests for Meu Condominio: verifying them in the app, producing them in CI"
 edition.workspace = true
 rust-version.workspace = true
