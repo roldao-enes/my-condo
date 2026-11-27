@@ -108,6 +108,8 @@ pub struct TxRow {
     pub value_date: String,
     pub description: String,
     pub tag: String,
+    /// The tag is a provider's (shown in its own colour).
+    pub tag_provider: bool,
     pub amount: String,
     pub negative: bool,
     pub balance: String,
@@ -150,6 +152,8 @@ pub struct TagRow {
     pub matching: &'static str,
     pub category: &'static str,
     pub who: String,
+    /// The provider the tag belongs to, or empty.
+    pub provider: String,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -195,6 +199,7 @@ fn tx_row(t: &TransactionView, paid: &HashMap<i64, i64>) -> TxRow {
         value_date: date(t.value_date),
         description: t.description.clone(),
         tag: t.tag_name.clone().unwrap_or_default(),
+        tag_provider: t.tag_is_provider,
         amount: format!("{}{}", if t.amount > 0 { "+" } else { "" }, money(t.amount)),
         negative: expense,
         balance: money(t.balance),
@@ -389,10 +394,12 @@ pub fn page(data: &FinanceData, today: NaiveDate, filters: &Filters) -> FinanceP
                 MatchType::Contains => "Contém nome",
             },
             category: t.tag.category.label(),
-            who: match (&t.owner_name, &t.unit_label) {
-                (Some(name), Some(unit)) => format!("{name} · {unit}"),
+            who: match (&t.owner_name, &t.unit_label, &t.provider_name) {
+                (Some(name), Some(unit), _) => format!("{name} · {unit}"),
+                (_, _, Some(_)) => "Fornecedor".to_owned(),
                 _ => "—".to_owned(),
             },
+            provider: t.provider_name.clone().unwrap_or_default(),
         })
         .collect();
 
@@ -460,6 +467,7 @@ mod tests {
             unit_id: None,
             owner_name: None,
             unit_label: None,
+            tag_is_provider: false,
         }
     }
 
@@ -521,6 +529,8 @@ mod tests {
                 },
                 owner_name: None,
                 unit_label: None,
+                provider_id: None,
+                provider_name: None,
             }],
         }
     }

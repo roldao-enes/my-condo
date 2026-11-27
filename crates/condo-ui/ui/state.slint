@@ -49,6 +49,8 @@ export struct TxRow {
     description: string,
     // Name of the matching tag, or "".
     tag: string,
+    // The tag belongs to a provider of services.
+    tag-provider: bool,
     amount: string,
     negative: bool,
     balance: string,
@@ -87,6 +89,8 @@ export struct TagRow {
     matching: string,
     category: string,
     who: string,
+    // The provider the tag belongs to, or "".
+    provider: string,
 }
 
 export struct BreakdownRow {
@@ -139,11 +143,53 @@ export struct JobRow {
     sent: string,
 }
 
+export struct ProviderTagRow {
+    id: int,
+    pattern: string,
+    matching: string,
+    category: string,
+}
+
+export struct ProviderRow {
+    id: int,
+    name: string,
+    kind: string,
+    contact: string,
+    email: string,
+    phone: string,
+    // In groups of four, or "".
+    iban: string,
+    note: string,
+    tags: [ProviderTagRow],
+}
+
+export struct ProviderDraft {
+    // -1 while creating
+    id: int,
+    kind-index: int,
+    name: string,
+    contact: string,
+    email: string,
+    phone: string,
+    iban: string,
+    note: string,
+}
+
+export struct ProviderTagDraft {
+    // -1 while creating
+    id: int,
+    provider-id: int,
+    provider-name: string,
+    pattern: string,
+    match-index: int,
+    category-index: int,
+}
+
 export global Backend {
     // --- Session and navigation ---------------------------------------------------------
     // "login" | "setup" | "main"
     in-out property <string> screen: "login";
-    // "overview" | "units" | "people" | "finances" | "settings"
+    // "overview" | "units" | "people" | "finances" | "providers" | "announcements" | "settings"
     in-out property <string> page: "overview";
     in property <string> user-name;
     in property <string> user-initials;
@@ -319,6 +365,27 @@ export global Backend {
     callback open-report();
     callback copy-report();
     callback export-report();
+
+    // --- Providers ------------------------------------------------------------------------
+    in property <[ProviderRow]> providers;
+    in property <string> providers-subtitle;
+    // Choices of the kind picker, in the same order as the kinds Rust keeps.
+    in property <[string]> provider-kind-options;
+    in property <ProviderDraft> provider-draft;
+    in property <ProviderTagDraft> provider-tag-draft;
+    in property <string> provider-remove-name;
+    in property <int> provider-remove-id;
+    in property <int> provider-remove-tags;
+    // "provider" | "provider-tag" | "provider-remove" (dialogs)
+    callback open-provider(int);
+    // id (-1 new), kind index, name, contact, email, phone, IBAN, note
+    callback save-provider(int, int, string, string, string, string, string, string);
+    callback open-provider-remove(int);
+    callback confirm-provider-remove(int);
+    // provider id, tag id (-1 new)
+    callback open-provider-tag(int, int);
+    // provider id, tag id (-1 new), pattern, match index, category index
+    callback save-provider-tag(int, int, string, int, int);
 
     // --- Announcements --------------------------------------------------------------------
     in property <[AnnRow]> ann-rows;

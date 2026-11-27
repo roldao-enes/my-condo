@@ -167,6 +167,8 @@ pub struct TransactionView {
     pub unit_id: Option<i64>,
     pub owner_name: Option<String>,
     pub unit_label: Option<String>,
+    /// Whether the tag that classified it is a provider's.
+    pub tag_is_provider: bool,
 }
 
 impl TransactionView {
@@ -199,6 +201,9 @@ pub struct TagView {
     pub tag: FinanceTag,
     pub owner_name: Option<String>,
     pub unit_label: Option<String>,
+    /// The provider whose name this tag holds, if it is a provider's tag.
+    pub provider_id: Option<i64>,
+    pub provider_name: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -216,7 +221,8 @@ pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
     let transactions = conn
         .prepare(
             "SELECT t.id, t.date, t.value_date, t.description, t.amount, t.balance, t.category,
-                    t.tag_id, g.name, t.owner_id, t.unit_id, r.name, u.label
+                    t.tag_id, g.name, t.owner_id, t.unit_id, r.name, u.label,
+                    g.provider_id IS NOT NULL
                FROM finance_transactions t
                LEFT JOIN finance_tags g ON g.id = t.tag_id
                LEFT JOIN people r ON r.id = t.owner_id
@@ -238,6 +244,7 @@ pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
                 unit_id: row.get(10)?,
                 owner_name: row.get(11)?,
                 unit_label: row.get(12)?,
+                tag_is_provider: row.get(13)?,
             })
         })?
         .collect::<Result<_, _>>()?;
@@ -301,16 +308,19 @@ pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
     let mut tags: Vec<TagView> = conn
         .prepare(
             "SELECT g.id, g.name, g.pattern, g.match_type, g.category, g.owner_id, g.unit_id,
-                    r.name, u.label
+                    r.name, u.label, g.provider_id, p.name
                FROM finance_tags g
                LEFT JOIN people r ON r.id = g.owner_id
-               LEFT JOIN units u ON u.id = g.unit_id",
+               LEFT JOIN units u ON u.id = g.unit_id
+               LEFT JOIN providers p ON p.id = g.provider_id",
         )?
         .query_map([], |row| {
             Ok(TagView {
                 tag: tag_from_row(row)?,
                 owner_name: row.get(7)?,
                 unit_label: row.get(8)?,
+                provider_id: row.get(9)?,
+                provider_name: row.get(10)?,
             })
         })?
         .collect::<Result<_, _>>()?;
@@ -369,9 +379,44 @@ fn truncated(value: &str, max_chars: usize) -> String {
     value.chars().take(max_chars).collect()
 }
 
+/// Applies the saved tags to movements nobody has classified yet: expenses still unclassified and
+/// income not yet tied to an owner, neither carrying a tag. What a person classified or identified
+/// is never touched. Returns how many movements were classified.
+fn reclassify(tx: &Transaction) -> rusqlite::Result<usize> {
+    let tags = load_tags(tx)?;
+    let pending: Vec<(i64, String, i64)> = tx
+        .prepare(
+            "SELECT id, description, amount FROM finance_transactions
+              WHERE tag_id IS NULL
+                AND ((amount < 0 AND category = 'unclassified')
+                     OR (amount > 0 AND owner_id IS NULL))",
+        )?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut classified = 0;
+    for (id, description, amount) in pending {
+        let Some(tag) = match_tag(&description, amount, &tags) else {
+            continue;
+        };
+        classified += if tag.category == TagCategory::OwnerPayment {
+            tx.execute(
+                "UPDATE finance_transactions SET tag_id = ?1, owner_id = ?2, unit_id = ?3
+                  WHERE id = ?4",
+                params![tag.id, tag.owner_id, tag.unit_id, id],
+            )?
+        } else {
+            tx.execute(
+                "UPDATE finance_transactions SET tag_id = ?1, category = ?2 WHERE id = ?3",
+                params![tag.id, tag.category.as_str(), id],
+            )?
+        };
+    }
+    Ok(classified)
+}
+
 /// Creates or updates a tag. Creating a tag whose (pattern, match type, direction) already exists
 /// updates that tag instead.
-fn write_tag(
+pub(crate) fn write_tag(
     tx: &Transaction,
     actor_id: i64,
     input: &TagInput,
@@ -440,6 +485,7 @@ fn write_tag(
             |row| row.get(0),
         )?,
     };
+    let reclassified = reclassify(tx)?;
     audit_events::record(
         tx,
         actor_id,
@@ -449,7 +495,7 @@ fn write_tag(
         Some(&json!({
             "name": name, "pattern": pattern, "match_type": input.match_type.as_str(),
             "direction": direction, "category": input.category.as_str(),
-            "owner_id": owner_id, "unit_id": unit_id,
+            "owner_id": owner_id, "unit_id": unit_id, "reclassified": reclassified,
         })),
     )?;
     Ok(tag_id)
@@ -465,6 +511,18 @@ pub fn save_tag(
     let tag_id = write_tag(&tx, actor_id, input, id)?;
     tx.commit()?;
     Ok(tag_id)
+}
+
+/// How a tag is named in a confirmation: its name, or for a provider's tag (which is named after
+/// the provider) the name it matches in the statement.
+pub fn tag_label(conn: &Connection, id: i64) -> Option<String> {
+    conn.query_row(
+        "SELECT CASE WHEN provider_id IS NULL THEN name ELSE name || ' · ' || pattern END
+           FROM finance_tags WHERE id = ?1",
+        [id],
+        |row| row.get(0),
+    )
+    .ok()
 }
 
 /// Removes a tag. Movements it classified keep their classification (the link is cleared).

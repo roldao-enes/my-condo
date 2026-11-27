@@ -52,12 +52,13 @@ pub fn year_file(year: i32) -> String {
 }
 
 /// Tables with no year, in the order they must be loaded.
-const BASE_TABLES: [&str; 6] = [
+const BASE_TABLES: [&str; 7] = [
     "users",
     "app_settings",
     "units",
     "people",
     "occupancies",
+    "providers",
     "finance_tags",
 ];
 

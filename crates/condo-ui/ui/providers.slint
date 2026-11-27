@@ -1,0 +1,424 @@
+import { Theme } from "theme.slint";
+import { Icons } from "icons.slint";
+import { Backend } from "state.slint";
+import { ScrollView } from "std-widgets.slint";
+import { AppButton, IconButton, TextField, TextArea, SelectField, Badge, Card, Modal, EmptyState, FormActions, InlineError, PageHeading } from "components.slint";
+
+// One line of a provider's details: a small label and its value. Hidden when there is no value.
+component Detail inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    spacing: 10px;
+    Text {
+        text: root.label;
+        font-size: 13px;
+        color: Theme.muted;
+        width: 120px;
+        vertical-alignment: top;
+    }
+
+    Text {
+        text: root.value;
+        font-size: 14px;
+        color: Theme.text;
+        wrap: word-wrap;
+        horizontal-stretch: 1;
+    }
+}
+
+// A name in the bank statement that belongs to the provider, in the provider colour.
+component NameRow inherits Rectangle {
+    in property <string> pattern;
+    in property <string> matching;
+    in property <string> category;
+    callback edit();
+    callback remove();
+    height: 40px;
+    border-radius: Theme.radius;
+    background: Theme.provider-soft;
+    HorizontalLayout {
+        padding-left: 12px;
+        padding-right: 4px;
+        spacing: 12px;
+        Text {
+            text: root.pattern;
+            font-size: 14px;
+            font-weight: 600;
+            color: Theme.provider-text;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: root.matching + " · " + root.category;
+            font-size: 13px;
+            color: Theme.muted;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.pencil;
+                label: "Editar nome no extrato: " + root.pattern;
+                clicked => {
+                    root.edit();
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            IconButton {
+                icon: Icons.trash;
+                label: "Remover nome no extrato: " + root.pattern;
+                clicked => {
+                    root.remove();
+                }
+            }
+        }
+    }
+}
+
+export component ProvidersPage inherits VerticalLayout {
+    spacing: 16px;
+    PageHeading {
+        eyebrow: "GESTÃO DO CONDOMÍNIO";
+        title: "Fornecedores";
+        subtitle: Backend.providers-subtitle;
+        AppButton {
+            kind: "primary";
+            text: "Novo fornecedor";
+            icon: Icons.plus;
+            clicked => {
+                Backend.open-provider(-1);
+            }
+        }
+    }
+
+    if Backend.providers.length == 0: EmptyState {
+        icon: Icons.briefcase;
+        title: "Sem fornecedores";
+        text: "Registe quem presta serviços ao condomínio (eletricidade, água, limpeza, banco, seguro) com os contactos e o IBAN, e os nomes com que aparecem no extrato.";
+        action: "Novo fornecedor";
+        action-icon: Icons.plus;
+        action-clicked => {
+            Backend.open-provider(-1);
+        }
+    }
+    if Backend.providers.length > 0: ScrollView {
+        vertical-stretch: 1;
+        VerticalLayout {
+            spacing: 14px;
+            padding-bottom: 16px;
+            for provider in Backend.providers: Card {
+                height: body.preferred-height;
+                body := VerticalLayout {
+                    padding: 20px;
+                    spacing: 12px;
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Text {
+                            text: provider.name;
+                            font-size: 18px;
+                            font-weight: 600;
+                            color: Theme.text;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+
+                        VerticalLayout {
+                            alignment: center;
+                            Badge {
+                                text: provider.kind;
+                                tone: "green";
+                            }
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                        }
+
+                        IconButton {
+                            icon: Icons.pencil;
+                            label: "Editar fornecedor: " + provider.name;
+                            clicked => {
+                                Backend.open-provider(provider.id);
+                            }
+                        }
+
+                        IconButton {
+                            icon: Icons.trash;
+                            label: "Remover fornecedor: " + provider.name;
+                            clicked => {
+                                Backend.open-provider-remove(provider.id);
+                            }
+                        }
+                    }
+
+                    VerticalLayout {
+                        spacing: 6px;
+                        if provider.contact != "": Detail {
+                            label: "Contacto";
+                            value: provider.contact;
+                        }
+                        if provider.email != "": Detail {
+                            label: "Email";
+                            value: provider.email;
+                        }
+                        if provider.phone != "": Detail {
+                            label: "Telefone";
+                            value: provider.phone;
+                        }
+                        if provider.iban != "": Detail {
+                            label: "IBAN";
+                            value: provider.iban;
+                        }
+                        if provider.note != "": Detail {
+                            label: "Nota";
+                            value: provider.note;
+                        }
+                    }
+
+                    Rectangle {
+                        height: 1px;
+                        background: Theme.border;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 10px;
+                        Text {
+                            text: "Nomes no extrato";
+                            font-size: 13px;
+                            font-weight: 600;
+                            color: Theme.text;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                        }
+
+                        AppButton {
+                            kind: "ghost";
+                            text: "Adicionar nome";
+                            icon: Icons.plus;
+                            clicked => {
+                                Backend.open-provider-tag(provider.id, -1);
+                            }
+                        }
+                    }
+
+                    if provider.tags.length == 0: Text {
+                        text: "Ainda sem nomes. Sem eles, os movimentos deste fornecedor não são reconhecidos nos extratos.";
+                        font-size: 13px;
+                        color: Theme.muted;
+                        wrap: word-wrap;
+                    }
+                    for name in provider.tags: NameRow {
+                        pattern: name.pattern;
+                        matching: name.matching;
+                        category: name.category;
+                        edit => {
+                            Backend.open-provider-tag(provider.id, name.id);
+                        }
+                        remove => {
+                            Backend.open-tag-remove(name.id);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+export component ProviderDialog inherits Modal {
+    title: Backend.provider-draft.id < 0 ? "Novo fornecedor" : "Editar fornecedor";
+    card-width: 560px;
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        kind.current-index = Backend.provider-draft.kind-index;
+        name.focus-field();
+    }
+    function submit() {
+        Backend.save-provider(Backend.provider-draft.id, kind.current-index, name.text, contact.text, email.text, phone.text, iban.text, note.text);
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        kind := SelectField {
+            label: "Tipo";
+            placeholder-first: false;
+            model: Backend.provider-kind-options;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+        }
+
+        name := TextField {
+            label: "Nome";
+            placeholder: "Ex.: EDP Comercial";
+            text: Backend.provider-draft.name;
+            horizontal-stretch: 2;
+            preferred-width: 0px;
+            accepted => {
+                root.submit();
+            }
+        }
+    }
+
+    contact := TextField {
+        label: "Pessoa de contacto";
+        optional: true;
+        text: Backend.provider-draft.contact;
+        accepted => {
+            root.submit();
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        email := TextField {
+            label: "Email";
+            optional: true;
+            text: Backend.provider-draft.email;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            accepted => {
+                root.submit();
+            }
+        }
+
+        phone := TextField {
+            label: "Telefone";
+            optional: true;
+            text: Backend.provider-draft.phone;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            accepted => {
+                root.submit();
+            }
+        }
+    }
+
+    iban := TextField {
+        label: "IBAN";
+        optional: true;
+        placeholder: "PT50 0000 0000 0000 0000 0000 0";
+        text: Backend.provider-draft.iban;
+        accepted => {
+            root.submit();
+        }
+    }
+
+    note := TextArea {
+        label: "Nota";
+        placeholder: "Ex.: Contrato n.º 123, débito direto no dia 5";
+        area-height: 90px;
+        text: Backend.provider-draft.note;
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Guardar fornecedor";
+        submit => {
+            root.submit();
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component ProviderTagDialog inherits Modal {
+    title: Backend.provider-tag-draft.id < 0 ? "Novo nome no extrato" : "Editar nome no extrato";
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        matching.current-index = Backend.provider-tag-draft.match-index;
+        category.current-index = Backend.provider-tag-draft.category-index;
+        pattern.focus-field();
+    }
+    function submit() {
+        Backend.save-provider-tag(Backend.provider-tag-draft.provider-id, Backend.provider-tag-draft.id, pattern.text, matching.current-index, category.current-index);
+    }
+
+    Text {
+        text: Backend.provider-tag-draft.provider-name;
+        font-size: 15px;
+        font-weight: 600;
+        color: Theme.provider-text;
+        overflow: elide;
+    }
+
+    pattern := TextField {
+        label: "Nome no extrato";
+        placeholder: "Como aparece na descrição do banco";
+        text: Backend.provider-tag-draft.pattern;
+        accepted => {
+            root.submit();
+        }
+    }
+
+    matching := SelectField {
+        label: "Correspondência";
+        placeholder-first: false;
+        model: ["Descrição completa", "Contém nome"];
+    }
+
+    category := SelectField {
+        label: "Classificação";
+        placeholder-first: false;
+        model: ["Recorrente", "Extraordinária"];
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Guardar nome";
+        submit => {
+            root.submit();
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component ProviderRemoveDialog inherits Modal {
+    title: "Remover fornecedor";
+    close => {
+        Backend.close-dialog();
+    }
+
+    Text {
+        text: Backend.provider-remove-name;
+        font-size: 15px;
+        font-weight: 600;
+        color: Theme.text;
+        wrap: word-wrap;
+    }
+
+    Text {
+        text: Backend.provider-remove-tags > 0 ? "Os nomes no extrato deste fornecedor ficam como etiquetas normais, por isso os movimentos continuam a ser classificados." : "Os contactos e o IBAN deste fornecedor deixam de estar registados.";
+        font-size: 14px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Remover";
+        submit => {
+            Backend.confirm-provider-remove(Backend.provider-remove-id);
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}

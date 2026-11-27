@@ -9,9 +9,10 @@ import { Shell } from "shell.slint";
 import { SettingsPage, RestoreDialog, ImportDialog } from "settings.slint";
 import { AnnouncementsPage, AnnouncementPage, NewAnnouncementDialog, QueueConfirmDialog } from "announcements.slint";
 import { FinancesPage, ChargeDialog, ClassifyDialog, PaymentDialog, TagDialog, TagRemoveDialog, ReportDialog } from "finances.slint";
+import { ProvidersPage, ProviderDialog, ProviderTagDialog, ProviderRemoveDialog } from "providers.slint";
 import { OverviewPage, UnitsPage, PeoplePage, UnitDialog, OnboardDialog, OffboardDialog, EditPersonDialog, DetailDialog } from "residency.slint";
 
-export { Backend, UnitRow, RelationRow, StatCard, ActivityRow, TxRow, AccountRow, ChargeRow, TagRow, BreakdownRow, MatchRow, TagDraft, ReportSection, AnnRow, JobRow } from "state.slint";
+export { Backend, UnitRow, RelationRow, StatCard, ActivityRow, TxRow, AccountRow, ChargeRow, TagRow, ProviderRow, ProviderTagRow, ProviderDraft, ProviderTagDraft, BreakdownRow, MatchRow, TagDraft, ReportSection, AnnRow, JobRow } from "state.slint";
 
 export component AppWindow inherits Window {
     title: "Meu Condomínio";
@@ -49,6 +50,10 @@ export component AppWindow inherits Window {
                 height: parent.height;
             }
             if Backend.page == "finances": FinancesPage {
+                width: parent.width;
+                height: parent.height;
+            }
+            if Backend.page == "providers": ProvidersPage {
                 width: parent.width;
                 height: parent.height;
             }
@@ -124,6 +129,19 @@ export component AppWindow inherits Window {
     }
 
     if Backend.screen == "main" && Backend.dialog == "report": ReportDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+
+    if Backend.screen == "main" && Backend.dialog == "provider": ProviderDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+    if Backend.screen == "main" && Backend.dialog == "provider-tag": ProviderTagDialog {
+        width: parent.width;
+        height: parent.height;
+    }
+    if Backend.screen == "main" && Backend.dialog == "provider-remove": ProviderRemoveDialog {
         width: parent.width;
         height: parent.height;
     }

@@ -3,6 +3,7 @@
 pub mod balances;
 pub mod locale;
 pub mod occupancy;
+pub mod providers;
 pub mod recipients;
 pub mod report;
 pub mod retry;

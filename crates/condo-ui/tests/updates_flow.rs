@@ -318,18 +318,13 @@ fn an_upgraded_database_tells_the_person_where_the_safety_copy_is() {
     // Make the data folder look like it was left by the previous schema version.
     {
         let conn = condo_db::rusqlite::Connection::open(paths.database()).unwrap();
-        // Undo the latest migration (owners and residents told apart), leaving what schema 2
-        // looked like. Update this together with the migration list when a newer one is added.
+        // Undo the latest migration (providers of services), leaving what schema 3 looked
+        // like. Update this together with the migration list when a newer one is added.
         conn.execute_batch(
-            "DROP TRIGGER occupancies_one_active_owner;
-             DROP TRIGGER occupancies_one_active_resident;
-             ALTER TABLE people RENAME TO residents;
-             ALTER TABLE occupancies RENAME COLUMN person_id TO resident_id;
-             ALTER TABLE email_jobs RENAME COLUMN person_id TO resident_id;
-             ALTER TABLE finance_tags RENAME COLUMN owner_id TO resident_id;
-             ALTER TABLE finance_transactions RENAME COLUMN owner_id TO resident_id;
-             ALTER TABLE finance_charges RENAME COLUMN owner_id TO resident_id;
-             PRAGMA user_version = 2;",
+            "DROP INDEX finance_tags_provider;
+             ALTER TABLE finance_tags DROP COLUMN provider_id;
+             DROP TABLE providers;
+             PRAGMA user_version = 3;",
         )
         .unwrap();
     }
@@ -345,7 +340,7 @@ fn an_upgraded_database_tells_the_person_where_the_safety_copy_is() {
         .map(|e| e.file_name().to_string_lossy().into_owned())
         .collect();
     assert_eq!(copies.len(), 1, "{copies:?}");
-    assert!(copies[0].ends_with("-v2-to-v3.db"), "{copies:?}");
+    assert!(copies[0].ends_with("-v3-to-v4.db"), "{copies:?}");
     h.snapshot("73-upgrade-notice");
 
     // Only once: the next start finds nothing to upgrade and says nothing.
