@@ -1107,4 +1107,61 @@ mod tests {
         let missing = update_person(&mut conn, actor, 999, "Ok", None, None);
         assert!(matches!(missing, Err(ServiceError::NotFound(_))));
     }
+
+    #[test]
+    fn one_person_can_own_several_units() {
+        let (mut conn, actor) = setup();
+        let a = create_unit(&mut conn, actor, "1A", "1").unwrap();
+        let b = create_unit(&mut conn, actor, "1B", "1").unwrap();
+        let first = assign_ok(
+            &mut conn,
+            actor,
+            a,
+            new_person("Ana"),
+            UnitRole::Owner,
+            d(2024, 1, 1),
+        );
+        let person: i64 = conn
+            .query_row(
+                "SELECT person_id FROM occupancies WHERE id = ?1",
+                [first],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assign_ok(
+            &mut conn,
+            actor,
+            b,
+            PersonRef::Existing(person),
+            UnitRole::Owner,
+            d(2024, 2, 1),
+        );
+        assert_eq!(count(&conn, "people"), 1);
+        let owned: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM occupancies WHERE person_id = ?1 AND role = 'owner' AND end_date IS NULL",
+                [person],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(owned, 2);
+        // Handing one unit over leaves the other with her.
+        replace_owner(
+            &mut conn,
+            actor,
+            first,
+            &new_person("Rui"),
+            d(2025, 1, 1),
+            today(),
+        )
+        .unwrap();
+        let still: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM occupancies WHERE person_id = ?1 AND end_date IS NULL",
+                [person],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(still, 1);
+    }
 }

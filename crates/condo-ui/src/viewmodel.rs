@@ -6,6 +6,7 @@ use condo_core::occupancy::UnitRole;
 use condo_core::tags::normalize_name;
 pub mod announcements;
 pub mod finance;
+pub mod providers;
 
 use std::collections::HashSet;
 

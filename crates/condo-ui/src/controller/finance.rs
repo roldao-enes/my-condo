@@ -53,6 +53,7 @@ fn tx_row(r: &fin::TxRow) -> TxRow {
         value_date: r.value_date.clone().into(),
         description: r.description.clone().into(),
         tag: r.tag.clone().into(),
+        tag_provider: r.tag_provider,
         amount: r.amount.clone().into(),
         negative: r.negative,
         balance: r.balance.clone().into(),
@@ -169,6 +170,7 @@ impl Controller {
                     matching: t.matching.into(),
                     category: t.category.into(),
                     who: t.who.clone().into(),
+                    provider: t.provider.clone().into(),
                 })
                 .collect(),
         ));
@@ -619,6 +621,10 @@ impl Controller {
             else {
                 return;
             };
+            // A provider's names are edited with the provider, so the two never disagree.
+            if let Some(provider) = tag.provider_id {
+                return self.open_provider_tag(ui, provider as i32, id);
+            }
             let account = match (tag.tag.owner_id, tag.tag.unit_id) {
                 (Some(r), Some(u)) => self
                     .accounts
@@ -705,12 +711,8 @@ impl Controller {
     }
 
     pub fn open_tag_remove(&mut self, ui: &AppWindow, id: i32) {
-        let Some(name) = self
-            .finance
-            .as_ref()
-            .and_then(|d| d.tags.iter().find(|t| t.tag.id == i64::from(id)))
-            .map(|t| t.tag.name.clone())
-        else {
+        // Read from the database, as tags are removed from the provider screen too.
+        let Some(name) = condo_db::finance::tag_label(&self.conn, i64::from(id)) else {
             return;
         };
         let backend = ui.global::<Backend>();

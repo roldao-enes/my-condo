@@ -114,6 +114,15 @@ export component Shell inherits Rectangle {
                 }
 
                 NavItem {
+                    icon: Icons.briefcase;
+                    text: "Fornecedores";
+                    active: Backend.page == "providers";
+                    clicked => {
+                        Backend.navigate("providers");
+                    }
+                }
+
+                NavItem {
                     icon: Icons.mail;
                     text: "Comunicados";
                     active: Backend.page == "announcements" || Backend.page == "announcement";

@@ -11,6 +11,7 @@ pub mod demo;
 pub mod email_queue;
 pub mod error;
 pub mod finance;
+pub mod providers;
 pub mod residency;
 pub mod settings;
 pub mod users;
@@ -30,6 +31,7 @@ const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_initial.sql"),
     include_str!("../migrations/0002_app_settings.sql"),
     include_str!("../migrations/0003_owner_and_resident.sql"),
+    include_str!("../migrations/0004_providers.sql"),
 ];
 
 /// The schema version this build creates and understands.

@@ -33,6 +33,7 @@ use crate::{ActivityRow, AppWindow, Backend, RelationRow, StatCard, UnitRow};
 
 mod announcements;
 mod finance;
+mod providers;
 mod updates;
 
 pub type Clock = Rc<dyn Fn() -> DateTime<Utc>>;
@@ -425,7 +426,8 @@ impl Controller {
     fn show_page(&mut self, ui: &AppWindow, page: &str) {
         let backend = ui.global::<Backend>();
         let page = match page {
-            "units" | "people" | "finances" | "announcements" | "announcement" | "settings" => page,
+            "units" | "people" | "finances" | "providers" | "announcements" | "announcement"
+            | "settings" => page,
             _ => "overview",
         };
         backend.set_page(page.into());
@@ -565,6 +567,12 @@ impl Controller {
                 String::new(),
                 (String::new(), String::new()),
             ),
+            "providers" => (
+                "Fornecedores",
+                "Fornecedores",
+                String::new(),
+                (String::new(), String::new()),
+            ),
             "settings" => (
                 "Definições",
                 "Definições",
@@ -586,6 +594,9 @@ impl Controller {
 
         if page == "finances" {
             self.refresh_finances(ui);
+        }
+        if page == "providers" {
+            self.refresh_providers(ui);
         }
         if page == "announcements" {
             self.refresh_announcements(ui);
@@ -1424,6 +1435,7 @@ pub fn attach(ui: &AppWindow, controller: Controller) -> Rc<RefCell<Controller>>
         end.as_str()
     ));
     finance::attach(ui, &controller);
+    providers::attach(ui, &controller);
     let mut timers = announcements::attach(ui, &controller);
     timers.extend(updates::attach(ui, &controller));
     controller.borrow_mut().timers = timers;
