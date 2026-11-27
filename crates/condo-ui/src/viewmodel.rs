@@ -2,29 +2,26 @@
 //! text and "today": no Slint types here, so it is all unit-testable.
 
 use condo_core::locale::{date, initials};
+use condo_core::occupancy::UnitRole;
 use condo_core::tags::normalize_name;
 pub mod announcements;
 pub mod finance;
 
+use std::collections::HashSet;
+
 use condo_db::residency::{Directory, Relationship, Unit};
 
-pub fn residents_phrase(count: usize) -> String {
-    match count {
-        0 => "Sem residentes".to_owned(),
-        1 => "1 residente".to_owned(),
-        n => format!("{n} residentes"),
-    }
-}
-
+/// A unit with who owns it and, for information only, who lives in it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitView {
     pub id: i64,
     pub label: String,
     pub floor: String,
-    pub people: String,
-    pub count: usize,
-    pub summary: String,
-    pub avatars: Vec<String>,
+    /// The owner's name ("" when none is recorded).
+    pub owner: String,
+    pub owner_initials: String,
+    /// Who lives there ("" when nobody is recorded); not necessarily the owner.
+    pub resident: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -57,26 +54,34 @@ pub struct ActivityView {
     pub departed: bool,
 }
 
-fn active_in(dir: &Directory, unit_id: i64) -> impl Iterator<Item = &Relationship> {
+fn active_in(dir: &Directory, unit_id: i64, role: UnitRole) -> impl Iterator<Item = &Relationship> {
     dir.relationships
         .iter()
-        .filter(move |r| r.unit_id == unit_id && r.end_date.is_none())
+        .filter(move |r| r.unit_id == unit_id && r.role == role && r.end_date.is_none())
+}
+
+fn names(people: &[&Relationship]) -> String {
+    people
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect::<Vec<_>>()
+        .join(", ")
 }
 
 pub fn unit_view(dir: &Directory, unit: &Unit) -> UnitView {
-    let people: Vec<&Relationship> = active_in(dir, unit.id).collect();
+    // A database upgraded from before this rule can hold several; they are all shown.
+    let owners: Vec<&Relationship> = active_in(dir, unit.id, UnitRole::Owner).collect();
+    let residents: Vec<&Relationship> = active_in(dir, unit.id, UnitRole::Resident).collect();
     UnitView {
         id: unit.id,
         label: unit.label.clone(),
         floor: unit.floor.clone(),
-        people: people
-            .iter()
-            .map(|p| p.name.as_str())
-            .collect::<Vec<_>>()
-            .join(", "),
-        count: people.len(),
-        summary: residents_phrase(people.len()),
-        avatars: people.iter().take(3).map(|p| initials(&p.name)).collect(),
+        owner: names(&owners),
+        owner_initials: owners
+            .first()
+            .map(|o| initials(&o.name))
+            .unwrap_or_default(),
+        resident: names(&residents),
     }
 }
 
@@ -115,17 +120,14 @@ pub struct Overview {
 }
 
 pub fn overview(dir: &Directory) -> Overview {
-    let active: Vec<&Relationship> = dir
-        .relationships
-        .iter()
-        .filter(|r| r.end_date.is_none())
-        .collect();
-    let occupied: std::collections::HashSet<i64> = active.iter().map(|r| r.unit_id).collect();
-    let residents: std::collections::HashSet<i64> = active.iter().map(|r| r.resident_id).collect();
-    let owners = active
-        .iter()
-        .filter(|r| r.role == condo_core::occupancy::ResidentRole::Owner)
-        .count();
+    let active = |role: UnitRole| {
+        dir.relationships
+            .iter()
+            .filter(move |r| r.role == role && r.end_date.is_none())
+    };
+    let owned: HashSet<i64> = active(UnitRole::Owner).map(|r| r.unit_id).collect();
+    let owners: HashSet<i64> = active(UnitRole::Owner).map(|r| r.person_id).collect();
+    let lived_in: HashSet<i64> = active(UnitRole::Resident).map(|r| r.unit_id).collect();
     let units = dir.units.len();
 
     Overview {
@@ -134,24 +136,17 @@ pub fn overview(dir: &Directory) -> Overview {
             StatView {
                 label: "Frações".into(),
                 value: units.to_string(),
-                caption: format!("{} sem residentes ativos", units - occupied.len()),
+                caption: format!("{} sem proprietário", units - owned.len()),
             },
             StatView {
-                label: "Residentes ativos".into(),
-                value: residents.len().to_string(),
-                caption: format!(
-                    "{owners} {} de propriedade",
-                    if owners == 1 {
-                        "relação"
-                    } else {
-                        "relações"
-                    }
-                ),
+                label: "Proprietários".into(),
+                value: owners.len().to_string(),
+                caption: "Membros do condomínio".into(),
             },
             StatView {
-                label: "Frações ocupadas".into(),
-                value: format!("{}/{units}", occupied.len()),
-                caption: "Com pelo menos uma relação ativa".into(),
+                label: "Frações com residente".into(),
+                value: format!("{}/{units}", lived_in.len()),
+                caption: "Residente indicado, só a título informativo".into(),
             },
         ],
         units: dir
@@ -168,10 +163,11 @@ pub fn overview(dir: &Directory) -> Overview {
                 name: r.name.clone(),
                 text: format!(
                     "{} · {}",
-                    if r.end_date.is_some() {
-                        "Saída registada"
-                    } else {
-                        "Entrada registada"
+                    match (r.role, r.end_date.is_some()) {
+                        (UnitRole::Owner, false) => "Novo proprietário",
+                        (UnitRole::Owner, true) => "Saída de proprietário",
+                        (UnitRole::Resident, false) => "Novo residente",
+                        (UnitRole::Resident, true) => "Saída de residente",
                     },
                     r.unit_label
                 ),
@@ -228,7 +224,7 @@ pub fn units_page(dir: &Directory, query: &str) -> UnitsPage {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ResidentsPage {
+pub struct PeoplePage {
     pub subtitle: String,
     pub rows: Vec<RelationView>,
     pub active_count: usize,
@@ -237,17 +233,17 @@ pub struct ResidentsPage {
     pub empty_text: String,
 }
 
-pub fn residents_page(dir: &Directory, query: &str, history: bool) -> ResidentsPage {
+pub fn people_page(dir: &Directory, query: &str, history: bool) -> PeoplePage {
     let active_count = dir
         .relationships
         .iter()
         .filter(|r| r.end_date.is_none())
         .count();
-    let distinct: std::collections::HashSet<i64> = dir
+    let distinct: HashSet<i64> = dir
         .relationships
         .iter()
         .filter(|r| r.end_date.is_none())
-        .map(|r| r.resident_id)
+        .map(|r| r.person_id)
         .collect();
     let rows: Vec<RelationView> = dir
         .relationships
@@ -268,27 +264,24 @@ pub fn residents_page(dir: &Directory, query: &str, history: bool) -> ResidentsP
         .collect();
     let searching = !normalize_name(query).is_empty();
     let (empty_title, empty_text) = match (searching, history) {
-        (true, _) => (
-            "Nenhum residente encontrado.",
-            "Experimente outra pesquisa.",
-        ),
+        (true, _) => ("Nenhuma pessoa encontrada.", "Experimente outra pesquisa."),
         (false, true) => (
             "Sem saídas registadas.",
             "As relações encerradas ficam guardadas aqui.",
         ),
         (false, false) => (
-            "Ainda não existem residentes ativos.",
-            "Associe um residente a uma fração.",
+            "Ainda não existem pessoas registadas.",
+            "Indique o proprietário de uma fração.",
         ),
     };
-    ResidentsPage {
+    PeoplePage {
         subtitle: format!(
             "{} {} com relação ativa",
             distinct.len(),
             if distinct.len() == 1 {
-                "residente"
+                "pessoa"
             } else {
-                "residentes"
+                "pessoas"
             }
         ),
         history_count: dir.relationships.len() - active_count,
@@ -315,7 +308,6 @@ pub fn unit_detail(dir: &Directory, unit_id: i64) -> Option<(String, String, Vec
 mod tests {
     use super::*;
     use chrono::NaiveDate;
-    use condo_core::occupancy::ResidentRole;
 
     fn d(y: i32, m: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
@@ -325,14 +317,14 @@ mod tests {
         id: i64,
         unit: (i64, &str),
         who: (i64, &str),
-        role: ResidentRole,
+        role: UnitRole,
         start: NaiveDate,
         end: Option<NaiveDate>,
     ) -> Relationship {
         Relationship {
             id,
             unit_id: unit.0,
-            resident_id: who.0,
+            person_id: who.0,
             unit_label: unit.1.into(),
             role,
             name: who.1.into(),
@@ -343,6 +335,8 @@ mod tests {
         }
     }
 
+    /// Unit 1: owned by Maria (Álvaro sold it), Pedro lives there. Unit 2: owned by Rui and
+    /// rented to Pedro too. Unit 3: nobody recorded.
     fn directory() -> Directory {
         let unit = |id, label: &str, floor: &str| Unit {
             id,
@@ -355,13 +349,13 @@ mod tests {
                 unit(2, "R/C Dir.", "0"),
                 unit(3, "2.o Dir.", "2"),
             ],
-            residents: vec![],
+            people: vec![],
             relationships: vec![
                 rel(
                     4,
                     (1, "1.o Esq."),
                     (3, "Álvaro Maria"),
-                    ResidentRole::Owner,
+                    UnitRole::Owner,
                     d(2025, 3, 1),
                     Some(d(2025, 5, 1)),
                 ),
@@ -369,7 +363,7 @@ mod tests {
                     3,
                     (2, "R/C Dir."),
                     (2, "Pedro Costa"),
-                    ResidentRole::Tenant,
+                    UnitRole::Resident,
                     d(2025, 2, 1),
                     None,
                 ),
@@ -377,7 +371,7 @@ mod tests {
                     2,
                     (1, "1.o Esq."),
                     (1, "Maria Silva"),
-                    ResidentRole::Owner,
+                    UnitRole::Owner,
                     d(2025, 1, 1),
                     None,
                 ),
@@ -385,8 +379,16 @@ mod tests {
                     1,
                     (1, "1.o Esq."),
                     (2, "Pedro Costa"),
-                    ResidentRole::Occupant,
+                    UnitRole::Resident,
                     d(2025, 1, 1),
+                    None,
+                ),
+                rel(
+                    5,
+                    (2, "R/C Dir."),
+                    (4, "Rui Carvalho"),
+                    UnitRole::Owner,
+                    d(2024, 6, 1),
                     None,
                 ),
             ],
@@ -394,14 +396,7 @@ mod tests {
     }
 
     #[test]
-    fn plural_forms() {
-        assert_eq!(residents_phrase(0), "Sem residentes");
-        assert_eq!(residents_phrase(1), "1 residente");
-        assert_eq!(residents_phrase(3), "3 residentes");
-    }
-
-    #[test]
-    fn overview_counts_people_and_units() {
+    fn overview_counts_owners_and_units_and_keeps_residents_informative() {
         let view = overview(&directory());
         let stats: Vec<_> = view
             .stats
@@ -411,32 +406,62 @@ mod tests {
         assert_eq!(
             stats,
             [
-                ("Frações", "3", "1 sem residentes ativos"),
-                // Pedro Costa lives in two units but counts once.
-                ("Residentes ativos", "2", "1 relação de propriedade"),
+                ("Frações", "3", "1 sem proprietário"),
+                ("Proprietários", "2", "Membros do condomínio"),
+                // Pedro Costa lives in two units: both count, he counts once as a person.
                 (
-                    "Frações ocupadas",
+                    "Frações com residente",
                     "2/3",
-                    "Com pelo menos uma relação ativa"
+                    "Residente indicado, só a título informativo"
                 ),
             ]
         );
         assert_eq!(view.units.len(), 3);
-        assert_eq!(view.units[0].summary, "2 residentes");
-        assert_eq!(view.units[0].people, "Maria Silva, Pedro Costa");
-        assert_eq!(view.units[0].avatars, ["MS", "PC"]);
-        assert_eq!(view.units[2].summary, "Sem residentes");
-        assert_eq!(view.activity[0].text, "Saída registada · 1.o Esq.");
+        let first = &view.units[0];
+        assert_eq!(
+            (
+                first.owner.as_str(),
+                first.owner_initials.as_str(),
+                first.resident.as_str()
+            ),
+            ("Maria Silva", "MS", "Pedro Costa")
+        );
+        // Owner and resident are different people in a rented flat.
+        assert_eq!(view.units[1].owner, "Rui Carvalho");
+        assert_eq!(view.units[1].resident, "Pedro Costa");
+        // Nobody recorded.
+        assert_eq!(
+            (&view.units[2].owner[..], &view.units[2].resident[..]),
+            ("", "")
+        );
+        assert_eq!(view.activity[0].text, "Saída de proprietário · 1.o Esq.");
         assert!(view.activity[0].departed);
         assert_eq!(view.activity[0].date, "01/05/2025");
-        assert_eq!(view.activity[1].text, "Entrada registada · R/C Dir.");
+        assert_eq!(view.activity[1].text, "Novo residente · R/C Dir.");
+    }
+
+    #[test]
+    fn a_unit_still_shows_every_active_owner_a_legacy_database_may_hold() {
+        let mut dir = directory();
+        dir.relationships.push(rel(
+            6,
+            (1, "1.o Esq."),
+            (5, "Co-proprietária"),
+            UnitRole::Owner,
+            d(2025, 1, 1),
+            None,
+        ));
+        assert_eq!(
+            unit_view(&dir, &dir.units[0]).owner,
+            "Maria Silva, Co-proprietária"
+        );
     }
 
     #[test]
     fn an_empty_condominium_has_zeroes_not_panics() {
         let view = overview(&Directory {
             units: vec![],
-            residents: vec![],
+            people: vec![],
             relationships: vec![],
         });
         assert_eq!(view.stats[2].value, "0/0");
@@ -458,7 +483,7 @@ mod tests {
                 n,
                 (1, "U1"),
                 (n, "Extra"),
-                ResidentRole::Occupant,
+                UnitRole::Resident,
                 d(2025, 1, 1),
                 None,
             ));
@@ -520,7 +545,7 @@ mod tests {
         let empty = units_page(
             &Directory {
                 units: vec![],
-                residents: vec![],
+                people: vec![],
                 relationships: vec![],
             },
             "",
@@ -529,20 +554,26 @@ mod tests {
     }
 
     #[test]
-    fn residents_split_into_active_and_history_with_counts() {
+    fn people_split_into_active_and_history_with_counts() {
         let dir = directory();
-        let active = residents_page(&dir, "", false);
-        assert_eq!((active.active_count, active.history_count), (3, 1));
+        let active = people_page(&dir, "", false);
+        assert_eq!((active.active_count, active.history_count), (4, 1));
         assert_eq!(
             active
                 .rows
                 .iter()
-                .map(|r| r.name.as_str())
+                .map(|r| (r.name.as_str(), r.role.as_str()))
                 .collect::<Vec<_>>(),
-            ["Pedro Costa", "Maria Silva", "Pedro Costa"]
+            [
+                ("Pedro Costa", "Residente"),
+                ("Maria Silva", "Proprietário"),
+                ("Pedro Costa", "Residente"),
+                ("Rui Carvalho", "Proprietário"),
+            ]
         );
-        assert_eq!(active.subtitle, "2 residentes com relação ativa");
-        let history = residents_page(&dir, "", true);
+        // Pedro lives in two units but is one person.
+        assert_eq!(active.subtitle, "3 pessoas com relação ativa");
+        let history = people_page(&dir, "", true);
         assert_eq!(history.rows.len(), 1);
         assert_eq!(
             (
@@ -557,11 +588,11 @@ mod tests {
     }
 
     #[test]
-    fn resident_search_matches_name_unit_and_email_without_accents() {
+    fn people_search_matches_name_unit_and_email_without_accents() {
         let mut dir = directory();
         dir.relationships[2].email = Some("maria@example.test".into());
         let names = |q, h| {
-            residents_page(&dir, q, h)
+            people_page(&dir, q, h)
                 .rows
                 .into_iter()
                 .map(|r| r.name)
@@ -569,38 +600,23 @@ mod tests {
         };
         assert_eq!(names("MARIA", false), ["Maria Silva"]);
         assert_eq!(names("example", false), ["Maria Silva"]);
-        assert_eq!(names("r/c", false), ["Pedro Costa"]);
+        assert_eq!(names("r/c", false), ["Pedro Costa", "Rui Carvalho"]);
         assert_eq!(names("alvaro", true), ["Álvaro Maria"]);
         assert_eq!(names("alvaro", false), Vec::<String>::new()); // history only shows in history
-        let page = residents_page(&dir, "zzz", true);
-        assert_eq!(page.empty_title, "Nenhum residente encontrado.");
+        let page = people_page(&dir, "zzz", true);
+        assert_eq!(page.empty_title, "Nenhuma pessoa encontrada.");
+        assert_eq!(people_page(&dir, "", true).rows[0].contact, "Sem contacto");
+        let nobody = Directory {
+            relationships: vec![],
+            ..dir.clone()
+        };
         assert_eq!(
-            residents_page(&dir, "", true).rows[0].contact,
-            "Sem contacto"
-        );
-        assert_eq!(
-            residents_page(
-                &Directory {
-                    relationships: vec![],
-                    ..dir.clone()
-                },
-                "",
-                true
-            )
-            .empty_title,
+            people_page(&nobody, "", true).empty_title,
             "Sem saídas registadas."
         );
         assert_eq!(
-            residents_page(
-                &Directory {
-                    relationships: vec![],
-                    ..dir.clone()
-                },
-                "",
-                false
-            )
-            .empty_title,
-            "Ainda não existem residentes ativos."
+            people_page(&nobody, "", false).empty_title,
+            "Ainda não existem pessoas registadas."
         );
     }
 
@@ -610,7 +626,7 @@ mod tests {
             1,
             (1, "A"),
             (1, "Ana"),
-            ResidentRole::Owner,
+            UnitRole::Owner,
             d(2025, 1, 1),
             None,
         );

@@ -121,7 +121,7 @@ pub fn detail(d: &AnnouncementDetail) -> DetailView {
         .iter()
         .filter(|j| matches!(j.status.as_str(), "pending" | "sending"))
         .count();
-    let mut unit_options = vec!["Todos os residentes ativos com email".to_owned()];
+    let mut unit_options = vec!["Todos os proprietários com email".to_owned()];
     unit_options.extend(d.units.iter().map(|(_, l)| format!("Apenas a fração {l}")));
     DetailView {
         id: d.announcement.id,
@@ -217,7 +217,7 @@ mod tests {
         assert_eq!(
             v.unit_options,
             [
-                "Todos os residentes ativos com email",
+                "Todos os proprietários com email",
                 "Apenas a fração 1A",
                 "Apenas a fração 1B"
             ]

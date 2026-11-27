@@ -3,9 +3,9 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
-use condo_core::occupancy::ResidentRole;
+use condo_core::occupancy::UnitRole;
 use condo_core::retry::MAX_ATTEMPTS;
-use condo_db::residency::{self, Onboarding, ResidentRef};
+use condo_db::residency::{self, PersonRef, Placement};
 use condo_db::rusqlite::Connection;
 use condo_db::{announcements, open_in_memory, timestamp, users};
 use condo_mail::{Clock, EmailSender, MailError, MailTransport, OutgoingEmail, SendSummary};
@@ -76,20 +76,20 @@ fn setup() -> (Connection, i64, i64) {
     (conn, actor, unit)
 }
 
-fn add_resident(
+fn add_owner(
     conn: &mut Connection,
     actor: i64,
     unit: i64,
     name: &str,
     email: &str,
-    role: ResidentRole,
+    role: UnitRole,
 ) {
-    residency::onboard(
+    residency::assign(
         conn,
         actor,
-        &Onboarding {
+        &Placement {
             unit_id: unit,
-            resident: ResidentRef::New {
+            person: PersonRef::New {
                 name: name.into(),
                 email: Some(email.into()),
                 phone: None,
@@ -102,15 +102,15 @@ fn add_resident(
     .unwrap();
 }
 
-/// One resident, one queued announcement; returns the job id.
+/// One owner, one queued announcement; returns the job id.
 fn queue_one(conn: &mut Connection, actor: i64, unit: i64) -> i64 {
-    add_resident(
+    add_owner(
         conn,
         actor,
         unit,
         "Ana",
         "ana@example.test",
-        ResidentRole::Owner,
+        UnitRole::Owner,
     );
     let id = announcements::create_draft(conn, actor, "Hi", "Body text").unwrap();
     announcements::queue(conn, actor, id, None).unwrap();
@@ -270,8 +270,17 @@ fn claiming_leases_the_job_so_a_second_runner_does_not_send_it_again() {
 #[test]
 fn honours_the_per_run_limit() {
     let (mut conn, actor, unit) = setup();
-    for email in ["a@example.test", "b@example.test", "c@example.test"] {
-        add_resident(&mut conn, actor, unit, email, email, ResidentRole::Occupant);
+    // Announcements go to owners, and a unit has one: one unit each.
+    for (n, email) in ["a@example.test", "b@example.test", "c@example.test"]
+        .into_iter()
+        .enumerate()
+    {
+        let unit = if n == 0 {
+            unit
+        } else {
+            residency::create_unit(&mut conn, actor, &format!("U{n}"), "1").unwrap()
+        };
+        add_owner(&mut conn, actor, unit, email, email, UnitRole::Owner);
     }
     let id = announcements::create_draft(&mut conn, actor, "Hi", "Body").unwrap();
     announcements::queue(&mut conn, actor, id, None).unwrap();

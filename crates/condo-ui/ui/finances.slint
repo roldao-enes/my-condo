@@ -444,7 +444,7 @@ export component FinancesPage inherits VerticalLayout {
         vertical-stretch: 1;
         spacing: 10px;
         SectionTitle {
-            title: "Saldos por residente";
+            title: "Saldos por proprietário";
             count: Backend.fin-accounts.length;
         }
 
@@ -458,7 +458,7 @@ export component FinancesPage inherits VerticalLayout {
                         head: true;
                         from: 0.0;
                         span: 0.4;
-                        text: "Residente";
+                        text: "Proprietário";
                     }
 
                     Cell {
@@ -549,7 +549,7 @@ export component FinancesPage inherits VerticalLayout {
                         head: true;
                         from: 0.0;
                         span: 0.24;
-                        text: "Residente / fração";
+                        text: "Proprietário / fração";
                     }
 
                     Cell {
@@ -767,7 +767,7 @@ export component FinancesPage inherits VerticalLayout {
                         head: true;
                         from: 0.73;
                         span: 0.17;
-                        text: "Residente / fração";
+                        text: "Proprietário / fração";
                     }
                 }
 
@@ -849,7 +849,7 @@ export component ChargeDialog inherits Modal {
     }
 
     account := SelectField {
-        label: "Residente / fração";
+        label: "Proprietário / fração";
         model: Backend.account-options;
     }
 
@@ -992,7 +992,7 @@ export component PaymentDialog inherits Modal {
         spacing: 10px;
         who := SelectField {
             horizontal-stretch: 1;
-            label: "Residente / fração";
+            label: "Proprietário / fração";
             placeholder-first: false;
             model: Backend.identity-options;
         }
@@ -1000,7 +1000,7 @@ export component PaymentDialog inherits Modal {
         VerticalLayout {
             alignment: end;
             AppButton {
-                text: "Guardar residente";
+                text: "Guardar proprietário";
                 icon: Icons.user-check;
                 clicked => {
                     Backend.identify(Backend.pay-target.id, who.current-index, remember-name.checked);
@@ -1070,8 +1070,8 @@ export component PaymentDialog inherits Modal {
             text <=> Backend.pay-amount;
         }
 
-        remember-resident := Checkbox {
-            text: "Memorizar nome do residente";
+        remember-payer := Checkbox {
+            text: "Memorizar nome do pagador";
             checked: true;
         }
 
@@ -1082,7 +1082,7 @@ export component PaymentDialog inherits Modal {
             submit-text: "Associar";
             cancel-text: "Fechar";
             submit => {
-                Backend.allocate(Backend.pay-target.id, root.charge-index, Backend.pay-amount, remember-resident.checked);
+                Backend.allocate(Backend.pay-target.id, root.charge-index, Backend.pay-amount, remember-payer.checked);
             }
             cancel => {
                 Backend.close-dialog();
@@ -1141,11 +1141,11 @@ export component TagDialog inherits Modal {
     category := SelectField {
         label: "Classificação";
         placeholder-first: false;
-        model: ["Recorrente", "Extraordinária", "Pagamento de residente"];
+        model: ["Recorrente", "Extraordinária", "Pagamento de proprietário"];
     }
 
     if category.current-index == 2: SelectField {
-        label: "Residente / fração";
+        label: "Proprietário / fração";
         current-index <=> root.account-index;
         model: Backend.account-options;
     }

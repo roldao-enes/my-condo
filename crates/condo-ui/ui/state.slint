@@ -5,13 +5,11 @@ export struct UnitRow {
     id: int,
     label: string,
     floor: string,
-    // "Maria Silva, Pedro Costa" or "".
-    people: string,
-    count: int,
-    // "3 residentes" / "Sem residentes".
-    summary: string,
-    // Up to three initials for the avatar stack.
-    avatars: [string],
+    // The owner (a condominium member, who is billed): "Maria Silva", or "" when none is recorded.
+    owner: string,
+    owner-initials: string,
+    // Who lives there, for information only (often a tenant): "Pedro Costa" or "".
+    resident: string,
 }
 
 export struct RelationRow {
@@ -144,7 +142,7 @@ export global Backend {
     // --- Session and navigation ---------------------------------------------------------
     // "login" | "setup" | "main"
     in-out property <string> screen: "login";
-    // "overview" | "units" | "residents" | "finances" | "settings"
+    // "overview" | "units" | "people" | "finances" | "settings"
     in-out property <string> page: "overview";
     in property <string> user-name;
     in property <string> user-initials;
@@ -183,9 +181,11 @@ export global Backend {
     in property <string> empty-text;
     // Choices for the pickers, in the same order as the ids Rust keeps.
     in property <[string]> unit-options;
-    in property <[string]> resident-options;
+    in property <[string]> person-options;
     in property <[string]> role-options;
     in property <int> preselect-unit-index: -1;
+    // Role offered first in the dialog: 0 owner, 1 resident.
+    in property <int> preselect-role-index: 0;
     in property <string> today-text;
 
     // "announcement" (page): one announcement. Dialogs also: "new-announcement" | "queue-confirm"
@@ -265,14 +265,14 @@ export global Backend {
     callback fin-set-category(int);
     callback import-statement();
 
-    // Pickers: index 0 is a prompt ("Selecionar residente").
+    // Pickers: index 0 is a prompt ("Selecionar pessoa").
     in property <[string]> account-options;
     in property <[string]> identity-options;
     in property <[string]> expense-category-options;
 
     // "charge" | "classify" | "payment" | "tag" | "tag-remove" | "report"
     callback open-charge();
-    // resident/unit index, description, due date, amount
+    // owner/unit index, description, due date, amount
     callback create-charge(int, string, string, string);
 
     in property <TxRow> classify-target;
@@ -347,12 +347,12 @@ export global Backend {
     callback search(string);
     callback set-history(bool);
     callback open-unit-detail(int);
-    callback open-onboard(int);
+    callback open-onboard(int, int);
     callback open-offboard(int);
     callback close-dialog();
     // label, floor
     callback create-unit(string, string);
-    // unit index, existing person?, resident index, name, email, phone, role index, entry date
+    // unit index, existing person?, person index, name, email, phone, role index, entry date
     callback onboard(int, bool, int, string, string, string, int, string);
     // relationship id, exit date
     callback offboard(int, string);

@@ -21,17 +21,20 @@ Europe/Lisbon time zone.
 - Password login (Argon2) with login throttling and audited sign-ins.
 
 **Residency**
-- Units, residents and a searchable directory.
-- Owner, tenant and occupant relationships with start and end dates.
-- Onboard a new person, or link an existing person to another unit.
-- Offboarding keeps the person, unit, relationship and history intact.
-- Overview, unit details, active residents and historical relationships.
+- Units, people and a searchable directory.
+- A unit has one **owner**, a condominium member who answers for its quotas and receives announcements,
+  and at most one **resident**, who lives there (often a tenant) and is informational only. They can
+  be the same person or two different ones, and the same person can own one unit and live in another.
+- Ownership and residence have start and end dates. Selling a unit is recording the old owner's exit,
+  then setting the new owner, so old charges stay with the owner they were issued to.
+- Ending a relationship keeps the person, unit, relationship and history intact.
+- Overview, unit details, owners, residents and historical relationships.
 
 **Finances**
 - Bank statement import (Portuguese number formats such as `1.234,56`), safe against duplicates.
 - Expense classification as unclassified, recurring or extraordinary, driven by a name registry of
   exact and "contains" tags (accent- and case-insensitive).
-- Resident quotas (charges), payment matching including partial payments, overdue balances and
+- Owner quotas (charges), payment matching including partial payments, overdue balances and
   reversible matches.
 - Finance dashboard and a financial report you can copy to the clipboard for pasting into Word.
 - Annual financial report for the current year, saved as a standalone HTML page that opens in a browser or in Word.
@@ -44,7 +47,7 @@ Europe/Lisbon time zone.
 - Every change runs in one transaction together with its audit row.
 - Append-only JSON Lines audit log, rotated by size.
 - Backup and restore of the database (consistent snapshots, written atomically).
-- Export and import of all data as JSON: one base file (users, settings, units, residents,
+- Export and import of all data as JSON: one base file (users, settings, units, people,
   occupancies, tags) plus one file per year (movements, charges, payments, announcements, email
   jobs, audit events). Import is validated in a scratch database first, saves a safety copy, then
   replaces everything in a single transaction.

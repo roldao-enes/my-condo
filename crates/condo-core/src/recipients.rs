@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecipientRow {
-    pub resident_id: i64,
+    pub person_id: i64,
     pub name: String,
     pub email: Option<String>,
     pub unit_label: String,
@@ -12,7 +12,7 @@ pub struct RecipientRow {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Recipient {
-    pub resident_id: i64,
+    pub person_id: i64,
     pub name: String,
     pub email: String,
     pub unit_labels: Vec<String>,
@@ -33,7 +33,7 @@ pub fn is_valid_email(value: &str) -> bool {
 }
 
 /// Collapses active occupancy rows into one recipient per distinct email address.
-/// Residents without a usable email are skipped; units are merged per recipient.
+/// People without a usable email are skipped; units are merged per recipient.
 pub fn build_recipients(rows: &[RecipientRow]) -> Vec<Recipient> {
     let mut recipients: Vec<Recipient> = Vec::new();
     let mut index: HashMap<String, usize> = HashMap::new();
@@ -48,7 +48,7 @@ pub fn build_recipients(rows: &[RecipientRow]) -> Vec<Recipient> {
             None => {
                 index.insert(email.clone(), recipients.len());
                 recipients.push(Recipient {
-                    resident_id: row.resident_id,
+                    person_id: row.person_id,
                     name: row.name.clone(),
                     email,
                     unit_labels: vec![row.unit_label.clone()],
@@ -70,7 +70,7 @@ mod tests {
 
     fn row(id: i64, name: &str, email: Option<&str>, unit: &str) -> RecipientRow {
         RecipientRow {
-            resident_id: id,
+            person_id: id,
             name: name.into(),
             email: email.map(Into::into),
             unit_label: unit.into(),
@@ -78,7 +78,7 @@ mod tests {
     }
 
     #[test]
-    fn skips_residents_without_a_valid_email() {
+    fn skips_people_without_a_valid_email() {
         let recipients = build_recipients(&[
             row(1, "Ana", None, "1A"),
             row(2, "Rui", Some("not-an-email"), "1B"),
@@ -98,7 +98,7 @@ mod tests {
         ]);
         assert_eq!(recipients.len(), 1);
         assert_eq!(recipients[0].email, "ana@example.test");
-        assert_eq!(recipients[0].resident_id, 1);
+        assert_eq!(recipients[0].person_id, 1);
         assert_eq!(recipients[0].unit_labels, ["1A", "2B"]);
     }
 

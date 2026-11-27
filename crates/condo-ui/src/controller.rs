@@ -15,10 +15,10 @@ use condo_app::session::{Login, LoginError, Session};
 use condo_app::updates::{SignedCheck, UpdateCheck};
 use condo_audit::{AuditActor, AuditFailure};
 use condo_core::locale::{date, initials, lisbon_date, parse_input_date};
-use condo_core::occupancy::ResidentRole;
+use condo_core::occupancy::UnitRole;
 use condo_db::demo;
 use condo_db::finance::FinanceData;
-use condo_db::residency::{self, Directory, Onboarding, ResidentRef};
+use condo_db::residency::{self, Directory, PersonRef, Placement};
 use condo_db::rusqlite::Connection;
 use condo_db::{auth, DatabaseError, ServiceError, ServiceResult};
 use condo_mail::{settings as smtp_settings, SmtpSettings};
@@ -37,11 +37,8 @@ mod updates;
 
 pub type Clock = Rc<dyn Fn() -> DateTime<Utc>>;
 
-const ROLES: [ResidentRole; 3] = [
-    ResidentRole::Owner,
-    ResidentRole::Tenant,
-    ResidentRole::Occupant,
-];
+/// The choices of the "role" picker, in order: the owner is the default.
+const ROLES: [UnitRole; 2] = [UnitRole::Owner, UnitRole::Resident];
 const UNEXPECTED: &str = "Ocorreu um erro inesperado. Nada foi alterado.";
 
 #[derive(Debug, thiserror::Error)]
@@ -63,7 +60,7 @@ pub struct Controller {
     // Finances: the filters, the data last read, and the ids behind the pickers.
     fin: crate::viewmodel::finance::Filters,
     finance: Option<FinanceData>,
-    /// (resident, unit) behind picker rows 1.. (row 0 is the prompt).
+    /// (owner, unit) behind picker rows 1.. (row 0 is the prompt).
     accounts: Vec<(i64, i64)>,
     month_keys: Vec<String>,
     pay: Option<finance::PayState>,
@@ -95,7 +92,7 @@ pub struct Controller {
     directory: Directory,
     /// Ids behind the picker rows; index 0 is the "select" placeholder, so it holds `None`.
     unit_ids: Vec<Option<i64>>,
-    resident_ids: Vec<Option<i64>>,
+    person_ids: Vec<Option<i64>>,
 }
 
 fn model<T: Clone + 'static>(items: Vec<T>) -> ModelRc<T> {
@@ -107,15 +104,9 @@ fn unit_row(u: &UnitView) -> UnitRow {
         id: u.id as i32,
         label: u.label.clone().into(),
         floor: u.floor.clone().into(),
-        people: u.people.clone().into(),
-        count: u.count as i32,
-        summary: u.summary.clone().into(),
-        avatars: model(
-            u.avatars
-                .iter()
-                .map(|a| SharedString::from(a.as_str()))
-                .collect(),
-        ),
+        owner: u.owner.clone().into(),
+        owner_initials: u.owner_initials.clone().into(),
+        resident: u.resident.clone().into(),
     }
 }
 
@@ -202,11 +193,11 @@ impl Controller {
             history: false,
             directory: Directory {
                 units: vec![],
-                residents: vec![],
+                people: vec![],
                 relationships: vec![],
             },
             unit_ids: vec![None],
-            resident_ids: vec![None],
+            person_ids: vec![None],
         })
     }
 
@@ -405,7 +396,7 @@ impl Controller {
         backend.set_activity(model(vec![]));
         self.directory = Directory {
             units: vec![],
-            residents: vec![],
+            people: vec![],
             relationships: vec![],
         };
         self.reset_forms(ui);
@@ -428,9 +419,7 @@ impl Controller {
     fn show_page(&mut self, ui: &AppWindow, page: &str) {
         let backend = ui.global::<Backend>();
         let page = match page {
-            "units" | "residents" | "finances" | "announcements" | "announcement" | "settings" => {
-                page
-            }
+            "units" | "people" | "finances" | "announcements" | "announcement" | "settings" => page,
             _ => "overview",
         };
         backend.set_page(page.into());
@@ -472,8 +461,8 @@ impl Controller {
         self.unit_ids = std::iter::once(None)
             .chain(dir.units.iter().map(|u| Some(u.id)))
             .collect();
-        self.resident_ids = std::iter::once(None)
-            .chain(dir.residents.iter().map(|r| Some(r.id)))
+        self.person_ids = std::iter::once(None)
+            .chain(dir.people.iter().map(|r| Some(r.id)))
             .collect();
         backend.set_unit_options(strings(
             std::iter::once("Selecionar fração".to_owned()).chain(
@@ -482,13 +471,13 @@ impl Controller {
                     .map(|u| format!("{} · Piso {}", u.label, u.floor)),
             ),
         ));
-        backend.set_resident_options(strings(
-            std::iter::once("Selecionar residente".to_owned()).chain(dir.residents.iter().map(
-                |r| match &r.email {
+        backend.set_person_options(strings(
+            std::iter::once("Selecionar pessoa".to_owned()).chain(dir.people.iter().map(|r| {
+                match &r.email {
                     Some(email) => format!("{} · {email}", r.name),
                     None => r.name.clone(),
-                },
-            )),
+                }
+            })),
         ));
         backend.set_total_units(dir.units.len() as i32);
 
@@ -522,10 +511,10 @@ impl Controller {
         backend.set_units(model(units.rows.iter().map(unit_row).collect()));
         backend.set_units_count_text(units.count_text.clone().into());
 
-        let residents = viewmodel::residents_page(dir, &self.query, self.history);
-        backend.set_relationships(model(residents.rows.iter().map(relation_row).collect()));
-        backend.set_active_count(residents.active_count as i32);
-        backend.set_history_count(residents.history_count as i32);
+        let people = viewmodel::people_page(dir, &self.query, self.history);
+        backend.set_relationships(model(people.rows.iter().map(relation_row).collect()));
+        backend.set_active_count(people.active_count as i32);
+        backend.set_history_count(people.history_count as i32);
 
         let page = backend.get_page();
         let (label, title, subtitle, empty) = match page.as_str() {
@@ -535,11 +524,11 @@ impl Controller {
                 units.subtitle.clone(),
                 (units.empty_title, units.empty_text),
             ),
-            "residents" => (
-                "Residentes",
-                "Residentes",
-                residents.subtitle.clone(),
-                (residents.empty_title, residents.empty_text),
+            "people" => (
+                "Pessoas",
+                "Pessoas",
+                people.subtitle.clone(),
+                (people.empty_title, people.empty_text),
             ),
             "announcements" | "announcement" => (
                 "Comunicados",
@@ -608,9 +597,8 @@ impl Controller {
         backend.set_smtp_from(saved.as_ref().map_or("", |s| &s.from).into());
         backend.set_smtp_has_password(saved.as_ref().is_some_and(|s| s.password.is_some()));
         backend.set_data_dir(self.paths.data_dir().display().to_string().into());
-        backend.set_can_load_demo(
-            self.directory.units.is_empty() && self.directory.residents.is_empty(),
-        );
+        backend
+            .set_can_load_demo(self.directory.units.is_empty() && self.directory.people.is_empty());
         self.refresh_updates(ui);
     }
 
@@ -637,14 +625,17 @@ impl Controller {
         self.open_dialog(ui, "detail");
     }
 
-    /// `unit_id` of -1 means "no unit chosen yet".
-    pub fn open_onboard(&mut self, ui: &AppWindow, unit_id: i32) {
+    /// `unit_id` of -1 means "no unit chosen yet". `role_index` picks the role offered first
+    /// (0 owner, 1 resident).
+    pub fn open_onboard(&mut self, ui: &AppWindow, unit_id: i32, role_index: i32) {
         let index = self
             .unit_ids
             .iter()
             .position(|id| *id == Some(i64::from(unit_id)))
             .map_or(-1, |i| i as i32);
-        ui.global::<Backend>().set_preselect_unit_index(index);
+        let backend = ui.global::<Backend>();
+        backend.set_preselect_unit_index(index);
+        backend.set_preselect_role_index(role_index.clamp(0, ROLES.len() as i32 - 1));
         self.open_dialog(ui, "onboard");
     }
 
@@ -743,7 +734,7 @@ impl Controller {
         ui: &AppWindow,
         unit_index: i32,
         existing: bool,
-        resident_index: i32,
+        person_index: i32,
         name: &str,
         email: &str,
         phone: &str,
@@ -757,7 +748,7 @@ impl Controller {
                 ui,
                 "residency.occupancy.onboard",
                 &actor,
-                "add a resident",
+                "set the owner or resident of a unit",
                 &error,
             );
         };
@@ -769,18 +760,18 @@ impl Controller {
         else {
             return invalid(self, "Selecione uma fração.");
         };
-        let resident = if existing {
+        let person = if existing {
             match self
-                .resident_ids
-                .get(resident_index.max(0) as usize)
+                .person_ids
+                .get(person_index.max(0) as usize)
                 .copied()
                 .flatten()
             {
-                Some(id) => ResidentRef::Existing(id),
-                None => return invalid(self, "Selecione um residente."),
+                Some(id) => PersonRef::Existing(id),
+                None => return invalid(self, "Selecione uma pessoa."),
             }
         } else {
-            ResidentRef::New {
+            PersonRef::New {
                 name: name.to_owned(),
                 email: Some(email.to_owned()),
                 phone: Some(phone.to_owned()),
@@ -792,15 +783,15 @@ impl Controller {
         let role = ROLES
             .get(role_index.max(0) as usize)
             .copied()
-            .unwrap_or(ResidentRole::Owner);
-        let input = Onboarding {
+            .unwrap_or(UnitRole::Owner);
+        let input = Placement {
             unit_id,
-            resident,
+            person,
             role,
             start_date,
         };
         let who = if existing {
-            format!("resident #{resident_index}")
+            format!("person #{person_index}")
         } else {
             quote(name.trim(), 160)
         };
@@ -811,11 +802,14 @@ impl Controller {
                 "add {who} to unit #{unit_id} as {} from {start_date}",
                 role.as_str()
             ),
-            "Residente associado à fração.",
-            move |conn, actor, today| residency::onboard(conn, actor, &input, today),
+            match role {
+                UnitRole::Owner => "Proprietário indicado.",
+                UnitRole::Resident => "Residente indicado.",
+            },
+            move |conn, actor, today| residency::assign(conn, actor, &input, today),
             |id| {
                 format!(
-                    "added a resident to unit #{unit_id} as {} from {start_date} (occupancy #{id})",
+                    "set a person on unit #{unit_id} as {} from {start_date} (occupancy #{id})",
                     role.as_str()
                 )
             },
@@ -841,7 +835,7 @@ impl Controller {
             "residency.occupancy.offboard",
             &format!("offboard occupancy #{id} on {end_date}"),
             "Saída registada. O histórico foi preservado.",
-            move |conn, actor, today| residency::offboard(conn, actor, id, end_date, today),
+            move |conn, actor, today| residency::end_relationship(conn, actor, id, end_date, today),
             |()| format!("offboarded occupancy #{id} on {end_date}"),
         );
     }
@@ -922,7 +916,7 @@ impl Controller {
             "load the sample data",
             "Dados de exemplo carregados.",
             demo::load,
-            |()| "loaded the sample units and residents".to_owned(),
+            |()| "loaded the sample units and people".to_owned(),
         );
     }
 
@@ -942,9 +936,9 @@ impl Controller {
                     "backup.export",
                     &actor,
                     &format!(
-                        "saved a backup ({} units, {} residents, {} movements) to {}",
+                        "saved a backup ({} units, {} people, {} movements) to {}",
                         info.units,
-                        info.residents,
+                        info.people,
                         info.transactions,
                         quote(&destination.display().to_string(), 300)
                     ),
@@ -1008,8 +1002,8 @@ impl Controller {
                         .join(", ")
                 };
                 let text = format!(
-                    "Estes ficheiros têm {} frações, {} residentes, {} contas de utilizador e {} movimentos bancários (anos: {}).",
-                    s.units, s.residents, s.users, s.transactions, years
+                    "Estes ficheiros têm {} frações, {} pessoas, {} contas de utilizador e {} movimentos bancários (anos: {}).",
+                    s.units, s.people, s.users, s.transactions, years
                 );
                 ui.global::<Backend>().set_import_summary(text.into());
                 self.pending_import = Some(plan);
@@ -1045,9 +1039,9 @@ impl Controller {
                     "data.import",
                     &actor,
                     &format!(
-                        "imported data ({} units, {} residents, {} users, {} movements, years {:?}); previous data kept in {}",
+                        "imported data ({} units, {} people, {} users, {} movements, years {:?}); previous data kept in {}",
                         s.units,
-                        s.residents,
+                        s.people,
                         s.users,
                         s.transactions,
                         s.years,
@@ -1079,8 +1073,8 @@ impl Controller {
         match backup::validate(&path) {
             Ok(info) => {
                 let summary = format!(
-                    "Esta cópia tem {} frações, {} residentes e {} movimentos bancários.",
-                    info.units, info.residents, info.transactions
+                    "Esta cópia tem {} frações, {} pessoas e {} movimentos bancários.",
+                    info.units, info.people, info.transactions
                 );
                 ui.global::<Backend>().set_restore_summary(summary.into());
                 self.pending_restore = Some(path);
@@ -1144,10 +1138,10 @@ impl Controller {
                     "backup.restore",
                     &actor,
                     &format!(
-                        "restored the backup {} ({} units, {} residents, {} movements); previous data kept in {}",
+                        "restored the backup {} ({} units, {} people, {} movements); previous data kept in {}",
                         quote(&path.display().to_string(), 300),
                         info.units,
-                        info.residents,
+                        info.people,
                         info.transactions,
                         safety.map_or("nowhere (there was none)".to_owned(), |p| quote(&p.display().to_string(), 300)),
                     ),
@@ -1231,7 +1225,8 @@ pub fn attach(ui: &AppWindow, controller: Controller) -> Rc<RefCell<Controller>>
     on!(on_search, |c, ui, query| c.search(&ui, query.as_str()));
     on!(on_set_history, |c, ui, history| c.set_history(&ui, history));
     on!(on_open_unit_detail, |c, ui, id| c.open_unit_detail(&ui, id));
-    on!(on_open_onboard, |c, ui, id| c.open_onboard(&ui, id));
+    on!(on_open_onboard, |c, ui, id, role| c
+        .open_onboard(&ui, id, role));
     on!(on_open_offboard, |c, ui, id| c.open_offboard(&ui, id));
     on!(on_close_dialog, |c, ui| c.close_dialog(&ui));
     on!(on_create_unit, |c, ui, label, floor| c.create_unit(

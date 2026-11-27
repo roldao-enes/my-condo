@@ -59,7 +59,8 @@ impl MailRun for Run {
     }
 }
 
-fn onboard(h: &Harness, unit_index: i32, name: &str, email: &str) {
+/// `role` 0 is the owner, 1 the resident.
+fn onboard(h: &Harness, unit_index: i32, name: &str, email: &str, role: i32) {
     h.backend().invoke_onboard(
         unit_index,
         false,
@@ -67,7 +68,7 @@ fn onboard(h: &Harness, unit_index: i32, name: &str, email: &str) {
         name.into(),
         email.into(),
         "".into(),
-        0,
+        role,
         "01/01/2025".into(),
     );
 }
@@ -97,9 +98,10 @@ fn drafting_queueing_and_sending_announcements() {
 
     add_unit(&h, "1A", "1");
     add_unit(&h, "1B", "1");
-    onboard(&h, 1, "Maria Silva", "maria@example.test");
-    onboard(&h, 1, "João Sem Email", "");
-    onboard(&h, 2, "Pedro Costa", "pedro@example.test");
+    onboard(&h, 1, "Maria Silva", "maria@example.test", 0);
+    // Announcements go to owners: the tenant, with an email, is not written to.
+    onboard(&h, 1, "João Arrendatário", "joao@example.test", 1);
+    onboard(&h, 2, "Pedro Costa", "pedro@example.test", 0);
 
     h.click("Comunicados");
     assert_eq!(h.backend().get_page().as_str(), "announcements");

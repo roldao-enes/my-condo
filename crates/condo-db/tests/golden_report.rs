@@ -51,9 +51,9 @@ fn the_report_for_the_sample_statement_matches_the_web_app_byte_for_byte() {
     // Order is irrelevant to the report (it sorts), but make that explicit.
     transactions.reverse();
 
-    let charge = |id, resident_id, unit_id, name: &str, label: &str, due: &str, amount| Charge {
+    let charge = |id, owner_id, unit_id, name: &str, label: &str, due: &str, amount| Charge {
         id,
-        resident_id,
+        owner_id,
         unit_id,
         name: name.into(),
         unit_label: label.into(),

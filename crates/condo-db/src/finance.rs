@@ -1,4 +1,4 @@
-//! Bank statements, expense classification, resident quotas (charges), payment matching and the
+//! Bank statements, expense classification, owner quotas (charges), payment matching and the
 //! name/tag registry. Ported from `app/finances/finance_service.ts`.
 //!
 //! Money is integer EUR cents. Every mutation is one `BEGIN IMMEDIATE` transaction that also
@@ -21,7 +21,7 @@ use crate::error::{text, ServiceError, ServiceResult};
 use crate::write_tx;
 
 pub const MAX_STATEMENT_BYTES: usize = 2 * 1024 * 1024;
-const NO_RELATIONSHIP: &str = "O residente não tem relação com esta fração.";
+const NO_RELATIONSHIP: &str = "A pessoa indicada não é proprietária desta fração.";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ImportSummary {
@@ -47,7 +47,7 @@ fn sha256_hex(input: &str) -> String {
 
 fn load_tags(conn: &Connection) -> rusqlite::Result<Vec<FinanceTag>> {
     conn.prepare(
-        "SELECT id, name, pattern, match_type, category, resident_id, unit_id FROM finance_tags",
+        "SELECT id, name, pattern, match_type, category, owner_id, unit_id FROM finance_tags",
     )?
     .query_map([], tag_from_row)?
     .collect()
@@ -60,7 +60,7 @@ fn tag_from_row(row: &Row) -> rusqlite::Result<FinanceTag> {
         pattern: row.get(2)?,
         match_type: enum_column(row, 3, MatchType::parse)?,
         category: enum_column(row, 4, TagCategory::parse)?,
-        resident_id: row.get(5)?,
+        owner_id: row.get(5)?,
         unit_id: row.get(6)?,
     })
 }
@@ -101,7 +101,7 @@ pub fn import_statement(
         let mut insert = tx.prepare(
             "INSERT INTO finance_transactions
                (fingerprint, date, value_date, description, amount, balance, imported_by,
-                category, tag_id, resident_id, unit_id)
+                category, tag_id, owner_id, unit_id)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
              ON CONFLICT (fingerprint) DO NOTHING",
         )?;
@@ -119,7 +119,7 @@ pub fn import_statement(
             *occurrence += 1;
             let tag = match_tag(&row.description, row.amount, &tags);
             let category = match tag {
-                Some(t) if t.category != TagCategory::ResidentPayment => t.category.as_str(),
+                Some(t) if t.category != TagCategory::OwnerPayment => t.category.as_str(),
                 _ => ExpenseCategory::Unclassified.as_str(),
             };
             imported += insert.execute(params![
@@ -132,7 +132,7 @@ pub fn import_statement(
                 actor_id,
                 category,
                 tag.map(|t| t.id),
-                tag.and_then(|t| t.resident_id),
+                tag.and_then(|t| t.owner_id),
                 tag.and_then(|t| t.unit_id),
             ])?;
         }
@@ -163,9 +163,9 @@ pub struct TransactionView {
     pub category: ExpenseCategory,
     pub tag_id: Option<i64>,
     pub tag_name: Option<String>,
-    pub resident_id: Option<i64>,
+    pub owner_id: Option<i64>,
     pub unit_id: Option<i64>,
-    pub resident_name: Option<String>,
+    pub owner_name: Option<String>,
     pub unit_label: Option<String>,
 }
 
@@ -185,10 +185,10 @@ impl TransactionView {
     }
 }
 
-/// A resident in a unit, for pickers (distinct over all relationships, past and present).
+/// An owner of a unit, for pickers (distinct over all ownerships, past and present).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Account {
-    pub resident_id: i64,
+    pub owner_id: i64,
     pub unit_id: i64,
     pub name: String,
     pub unit_label: String,
@@ -197,7 +197,7 @@ pub struct Account {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TagView {
     pub tag: FinanceTag,
-    pub resident_name: Option<String>,
+    pub owner_name: Option<String>,
     pub unit_label: Option<String>,
 }
 
@@ -216,10 +216,10 @@ pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
     let transactions = conn
         .prepare(
             "SELECT t.id, t.date, t.value_date, t.description, t.amount, t.balance, t.category,
-                    t.tag_id, g.name, t.resident_id, t.unit_id, r.name, u.label
+                    t.tag_id, g.name, t.owner_id, t.unit_id, r.name, u.label
                FROM finance_transactions t
                LEFT JOIN finance_tags g ON g.id = t.tag_id
-               LEFT JOIN residents r ON r.id = t.resident_id
+               LEFT JOIN people r ON r.id = t.owner_id
                LEFT JOIN units u ON u.id = t.unit_id
               ORDER BY t.date DESC, t.id DESC",
         )?
@@ -234,9 +234,9 @@ pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
                 category: enum_column(row, 6, ExpenseCategory::parse)?,
                 tag_id: row.get(7)?,
                 tag_name: row.get(8)?,
-                resident_id: row.get(9)?,
+                owner_id: row.get(9)?,
                 unit_id: row.get(10)?,
-                resident_name: row.get(11)?,
+                owner_name: row.get(11)?,
                 unit_label: row.get(12)?,
             })
         })?
@@ -244,17 +244,17 @@ pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
 
     let charges = conn
         .prepare(
-            "SELECT c.id, c.resident_id, c.unit_id, r.name, u.label, c.description, c.due_date,
+            "SELECT c.id, c.owner_id, c.unit_id, r.name, u.label, c.description, c.due_date,
                     c.amount
                FROM finance_charges c
-               JOIN residents r ON r.id = c.resident_id
+               JOIN people r ON r.id = c.owner_id
                JOIN units u ON u.id = c.unit_id
               ORDER BY c.due_date, c.id",
         )?
         .query_map([], |row| {
             Ok(Charge {
                 id: row.get(0)?,
-                resident_id: row.get(1)?,
+                owner_id: row.get(1)?,
                 unit_id: row.get(2)?,
                 name: row.get(3)?,
                 unit_label: row.get(4)?,
@@ -279,14 +279,15 @@ pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
 
     let mut accounts: Vec<Account> = conn
         .prepare(
-            "SELECT DISTINCT o.resident_id, o.unit_id, r.name, u.label
+            "SELECT DISTINCT o.person_id, o.unit_id, r.name, u.label
                FROM occupancies o
-               JOIN residents r ON r.id = o.resident_id
-               JOIN units u ON u.id = o.unit_id",
+               JOIN people r ON r.id = o.person_id
+               JOIN units u ON u.id = o.unit_id
+              WHERE o.role = 'owner'",
         )?
         .query_map([], |row| {
             Ok(Account {
-                resident_id: row.get(0)?,
+                owner_id: row.get(0)?,
                 unit_id: row.get(1)?,
                 name: row.get(2)?,
                 unit_label: row.get(3)?,
@@ -299,16 +300,16 @@ pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
 
     let mut tags: Vec<TagView> = conn
         .prepare(
-            "SELECT g.id, g.name, g.pattern, g.match_type, g.category, g.resident_id, g.unit_id,
+            "SELECT g.id, g.name, g.pattern, g.match_type, g.category, g.owner_id, g.unit_id,
                     r.name, u.label
                FROM finance_tags g
-               LEFT JOIN residents r ON r.id = g.resident_id
+               LEFT JOIN people r ON r.id = g.owner_id
                LEFT JOIN units u ON u.id = g.unit_id",
         )?
         .query_map([], |row| {
             Ok(TagView {
                 tag: tag_from_row(row)?,
-                resident_name: row.get(7)?,
+                owner_name: row.get(7)?,
                 unit_label: row.get(8)?,
             })
         })?
@@ -333,28 +334,29 @@ pub struct TagInput {
     pub pattern: String,
     pub match_type: MatchType,
     pub category: TagCategory,
-    /// Required (with `unit_id`) for resident payments, ignored otherwise.
-    pub resident_id: Option<i64>,
+    /// Required (with `unit_id`) for owner payments, ignored otherwise.
+    pub owner_id: Option<i64>,
     pub unit_id: Option<i64>,
 }
 
-fn account_exists(tx: &Transaction, resident_id: i64, unit_id: i64) -> rusqlite::Result<bool> {
+fn account_exists(tx: &Transaction, owner_id: i64, unit_id: i64) -> rusqlite::Result<bool> {
     tx.query_row(
-        "SELECT EXISTS (SELECT 1 FROM occupancies WHERE resident_id = ?1 AND unit_id = ?2)",
-        [resident_id, unit_id],
+        "SELECT EXISTS (SELECT 1 FROM occupancies
+                         WHERE person_id = ?1 AND unit_id = ?2 AND role = 'owner')",
+        [owner_id, unit_id],
         |row| row.get(0),
     )
 }
 
-/// The resident must have (had) a relationship with the unit.
+/// The person must be (or have been) the owner of the unit: only owners hold an account.
 fn validate_account(
     tx: &Transaction,
-    resident_id: Option<i64>,
+    owner_id: Option<i64>,
     unit_id: Option<i64>,
 ) -> ServiceResult<()> {
-    match (resident_id, unit_id) {
-        (Some(resident), Some(unit)) if resident > 0 && unit > 0 => {
-            if account_exists(tx, resident, unit)? {
+    match (owner_id, unit_id) {
+        (Some(owner), Some(unit)) if owner > 0 && unit > 0 => {
+            if account_exists(tx, owner, unit)? {
                 return Ok(());
             }
             Err(ServiceError::Rejected(NO_RELATIONSHIP.into()))
@@ -388,12 +390,12 @@ fn write_tag(
         160,
         "O nome da etiqueta deve ter entre 1 e 160 caracteres.",
     )?;
-    let resident_payment = input.category == TagCategory::ResidentPayment;
-    if resident_payment {
-        validate_account(tx, input.resident_id, input.unit_id)?;
+    let owner_payment = input.category == TagCategory::OwnerPayment;
+    if owner_payment {
+        validate_account(tx, input.owner_id, input.unit_id)?;
     }
-    let resident_id = input.resident_id.filter(|_| resident_payment);
-    let unit_id = input.unit_id.filter(|_| resident_payment);
+    let owner_id = input.owner_id.filter(|_| owner_payment);
+    let unit_id = input.unit_id.filter(|_| owner_payment);
     let direction = input.category.direction();
 
     let tag_id: i64 = match id {
@@ -401,7 +403,7 @@ fn write_tag(
             .query_row(
                 "UPDATE finance_tags
                     SET name = ?1, pattern = ?2, match_type = ?3, direction = ?4, category = ?5,
-                        resident_id = ?6, unit_id = ?7
+                        owner_id = ?6, unit_id = ?7
                   WHERE id = ?8 RETURNING id",
                 params![
                     name,
@@ -409,7 +411,7 @@ fn write_tag(
                     input.match_type.as_str(),
                     direction,
                     input.category.as_str(),
-                    resident_id,
+                    owner_id,
                     unit_id,
                     id
                 ],
@@ -419,11 +421,11 @@ fn write_tag(
             .ok_or_else(|| ServiceError::NotFound("Etiqueta não encontrada.".into()))?,
         None => tx.query_row(
             "INSERT INTO finance_tags
-               (name, pattern, match_type, direction, category, resident_id, unit_id, created_by)
+               (name, pattern, match_type, direction, category, owner_id, unit_id, created_by)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
              ON CONFLICT (pattern, match_type, direction) DO UPDATE SET
                name = excluded.name, category = excluded.category,
-               resident_id = excluded.resident_id, unit_id = excluded.unit_id
+               owner_id = excluded.owner_id, unit_id = excluded.unit_id
              RETURNING id",
             params![
                 name,
@@ -431,7 +433,7 @@ fn write_tag(
                 input.match_type.as_str(),
                 direction,
                 input.category.as_str(),
-                resident_id,
+                owner_id,
                 unit_id,
                 actor_id
             ],
@@ -447,7 +449,7 @@ fn write_tag(
         Some(&json!({
             "name": name, "pattern": pattern, "match_type": input.match_type.as_str(),
             "direction": direction, "category": input.category.as_str(),
-            "resident_id": resident_id, "unit_id": unit_id,
+            "owner_id": owner_id, "unit_id": unit_id,
         })),
     )?;
     Ok(tag_id)
@@ -471,7 +473,7 @@ pub fn delete_tag(conn: &mut Connection, actor_id: i64, id: i64) -> ServiceResul
     let tag: Option<serde_json::Value> = tx
         .query_row(
             "SELECT json_object('id', id, 'name', name, 'pattern', pattern, 'match_type', match_type,
-                    'direction', direction, 'category', category, 'resident_id', resident_id,
+                    'direction', direction, 'category', category, 'owner_id', owner_id,
                     'unit_id', unit_id, 'created_by', created_by)
                FROM finance_tags WHERE id = ?1",
             [id],
@@ -529,7 +531,7 @@ pub fn classify(
                 pattern: description,
                 match_type: MatchType::Exact,
                 category: tag_category,
-                resident_id: None,
+                owner_id: None,
                 unit_id: None,
             },
             None,
@@ -556,7 +558,7 @@ pub fn classify(
 
 #[derive(Debug, Clone)]
 pub struct NewCharge {
-    pub resident_id: i64,
+    pub owner_id: i64,
     pub unit_id: i64,
     pub description: String,
     pub due_date: NaiveDate,
@@ -581,13 +583,20 @@ pub fn create_charge(
         ));
     }
     let tx = write_tx(conn)?;
-    if !account_exists(&tx, input.resident_id, input.unit_id)? {
+    if !account_exists(&tx, input.owner_id, input.unit_id)? {
         return Err(ServiceError::Rejected(NO_RELATIONSHIP.into()));
     }
     tx.execute(
-        "INSERT INTO finance_charges (resident_id, unit_id, description, due_date, amount, created_by)
+        "INSERT INTO finance_charges (owner_id, unit_id, description, due_date, amount, created_by)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![input.resident_id, input.unit_id, description, input.due_date, input.amount, actor_id],
+        params![
+            input.owner_id,
+            input.unit_id,
+            description,
+            input.due_date,
+            input.amount,
+            actor_id
+        ],
     )?;
     let charge_id = tx.last_insert_rowid();
     audit_events::record(
@@ -597,7 +606,7 @@ pub fn create_charge(
         "charge",
         charge_id,
         Some(&json!({
-            "residentId": input.resident_id, "unitId": input.unit_id, "description": description,
+            "ownerId": input.owner_id, "unitId": input.unit_id, "description": description,
             "dueDate": input.due_date.to_string(), "amount": input.amount,
         })),
     )?;
@@ -636,12 +645,12 @@ pub fn allocate(
         .optional()?;
     let charge: Option<(i64, i64, i64)> = tx
         .query_row(
-            "SELECT amount, resident_id, unit_id FROM finance_charges WHERE id = ?1",
+            "SELECT amount, owner_id, unit_id FROM finance_charges WHERE id = ?1",
             [charge_id],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    let (Some((movement_amount, description)), Some((charge_amount, resident_id, unit_id))) =
+    let (Some((movement_amount, description)), Some((charge_amount, owner_id, unit_id))) =
         (movement, charge)
     else {
         return Err(ServiceError::NotFound(
@@ -661,8 +670,8 @@ pub fn allocate(
             "SELECT EXISTS (
                SELECT 1 FROM finance_payments p
                  JOIN finance_charges c ON c.id = p.charge_id
-                WHERE p.transaction_id = ?1 AND (c.resident_id <> ?2 OR c.unit_id <> ?3))",
-            params![transaction_id, resident_id, unit_id],
+                WHERE p.transaction_id = ?1 AND (c.owner_id <> ?2 OR c.unit_id <> ?3))",
+            params![transaction_id, owner_id, unit_id],
             |row| row.get(0),
         )?;
         if shared {
@@ -677,15 +686,15 @@ pub fn allocate(
                 name: truncated(&description, 160),
                 pattern: description,
                 match_type: MatchType::Exact,
-                category: TagCategory::ResidentPayment,
-                resident_id: Some(resident_id),
+                category: TagCategory::OwnerPayment,
+                owner_id: Some(owner_id),
                 unit_id: Some(unit_id),
             },
             None,
         )?;
         tx.execute(
-            "UPDATE finance_transactions SET tag_id = ?1, resident_id = ?2, unit_id = ?3 WHERE id = ?4",
-            params![tag_id, resident_id, unit_id, transaction_id],
+            "UPDATE finance_transactions SET tag_id = ?1, owner_id = ?2, unit_id = ?3 WHERE id = ?4",
+            params![tag_id, owner_id, unit_id, transaction_id],
         )?;
     }
 
@@ -735,12 +744,12 @@ pub fn unallocate(conn: &mut Connection, actor_id: i64, payment_id: i64) -> Serv
     Ok(())
 }
 
-/// Sets (or, with `None`/`None`, clears) which resident and unit an income movement came from.
+/// Sets (or, with `None`/`None`, clears) which owner and unit an income movement came from.
 pub fn identify(
     conn: &mut Connection,
     actor_id: i64,
     transaction_id: i64,
-    resident_id: Option<i64>,
+    owner_id: Option<i64>,
     unit_id: Option<i64>,
     remember: bool,
 ) -> ServiceResult<()> {
@@ -755,19 +764,19 @@ pub fn identify(
     let Some(description) = description else {
         return Err(ServiceError::NotFound("Entrada não encontrada.".into()));
     };
-    if resident_id.is_some() || unit_id.is_some() {
-        validate_account(&tx, resident_id, unit_id)?;
+    if owner_id.is_some() || unit_id.is_some() {
+        validate_account(&tx, owner_id, unit_id)?;
     }
-    let tag_id = match (resident_id, unit_id) {
-        (Some(resident), Some(unit)) if remember => Some(write_tag(
+    let tag_id = match (owner_id, unit_id) {
+        (Some(owner), Some(unit)) if remember => Some(write_tag(
             &tx,
             actor_id,
             &TagInput {
                 name: truncated(&description, 160),
                 pattern: description,
                 match_type: MatchType::Exact,
-                category: TagCategory::ResidentPayment,
-                resident_id: Some(resident),
+                category: TagCategory::OwnerPayment,
+                owner_id: Some(owner),
                 unit_id: Some(unit),
             },
             None,
@@ -775,16 +784,16 @@ pub fn identify(
         _ => None,
     };
     tx.execute(
-        "UPDATE finance_transactions SET resident_id = ?1, unit_id = ?2, tag_id = ?3 WHERE id = ?4",
-        params![resident_id, unit_id, tag_id, transaction_id],
+        "UPDATE finance_transactions SET owner_id = ?1, unit_id = ?2, tag_id = ?3 WHERE id = ?4",
+        params![owner_id, unit_id, tag_id, transaction_id],
     )?;
     audit_events::record(
         &tx,
         actor_id,
-        "finance.resident_identified",
+        "finance.owner_identified",
         "transaction",
         transaction_id,
-        Some(&json!({ "residentId": resident_id, "unitId": unit_id, "tagId": tag_id })),
+        Some(&json!({ "ownerId": owner_id, "unitId": unit_id, "tagId": tag_id })),
     )?;
     tx.commit()?;
     Ok(())

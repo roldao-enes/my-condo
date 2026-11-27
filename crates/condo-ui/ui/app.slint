@@ -9,7 +9,7 @@ import { Shell } from "shell.slint";
 import { SettingsPage, RestoreDialog, ImportDialog } from "settings.slint";
 import { AnnouncementsPage, AnnouncementPage, NewAnnouncementDialog, QueueConfirmDialog } from "announcements.slint";
 import { FinancesPage, ChargeDialog, ClassifyDialog, PaymentDialog, TagDialog, TagRemoveDialog, ReportDialog } from "finances.slint";
-import { OverviewPage, UnitsPage, ResidentsPage, UnitDialog, OnboardDialog, OffboardDialog, DetailDialog } from "residency.slint";
+import { OverviewPage, UnitsPage, PeoplePage, UnitDialog, OnboardDialog, OffboardDialog, DetailDialog } from "residency.slint";
 
 export { Backend, UnitRow, RelationRow, StatCard, ActivityRow, TxRow, AccountRow, ChargeRow, TagRow, BreakdownRow, MatchRow, TagDraft, ReportSection, AnnRow, JobRow } from "state.slint";
 
@@ -44,7 +44,7 @@ export component AppWindow inherits Window {
                 width: parent.width;
                 height: parent.height;
             }
-            if Backend.page == "residents": ResidentsPage {
+            if Backend.page == "people": PeoplePage {
                 width: parent.width;
                 height: parent.height;
             }

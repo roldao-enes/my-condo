@@ -4,32 +4,40 @@
 //! residents under the administrator who asks for it, so the app never ships a known password.
 
 use chrono::NaiveDate;
-use condo_core::occupancy::ResidentRole;
+use condo_core::occupancy::UnitRole;
 use rusqlite::Connection;
 
 use crate::error::{ServiceError, ServiceResult};
-use crate::residency::{self, Onboarding, ResidentRef};
+use crate::residency::{self, PersonRef, Placement};
 
-/// (unit label, floor, resident name, role). The last unit is deliberately empty.
-const ENTRIES: [(&str, &str, Option<&str>, ResidentRole); 6] = [
-    ("R/C Esq.", "0", Some("Maria Silva"), ResidentRole::Owner),
-    ("R/C Dir.", "0", Some("Pedro Costa"), ResidentRole::Tenant),
-    ("1.º Esq.", "1", Some("Sofia Almeida"), ResidentRole::Owner),
-    ("1.º Dir.", "1", Some("Miguel Santos"), ResidentRole::Owner),
+/// (unit label, floor, owner, resident). Two flats are rented out, so their owner and resident
+/// differ; the last unit is deliberately empty.
+type Entry = (
+    &'static str,
+    &'static str,
+    Option<&'static str>,
+    Option<&'static str>,
+);
+
+const ENTRIES: [Entry; 6] = [
+    ("R/C Esq.", "0", Some("Maria Silva"), None),
+    ("R/C Dir.", "0", Some("Rui Carvalho"), Some("Pedro Costa")),
+    ("1.º Esq.", "1", Some("Sofia Almeida"), None),
+    ("1.º Dir.", "1", Some("Miguel Santos"), None),
     (
         "2.º Esq.",
         "2",
+        Some("Helena Rocha"),
         Some("Beatriz Ferreira"),
-        ResidentRole::Tenant,
     ),
-    ("2.º Dir.", "2", None, ResidentRole::Owner),
+    ("2.º Dir.", "2", None, None),
 ];
 
-/// Loads the sample units and residents. Refuses unless the database has no units or residents,
-/// and changes nothing in that case.
+/// Loads the sample units, owners and residents. Refuses unless the database has no units or
+/// people, and changes nothing in that case.
 pub fn load(conn: &mut Connection, actor_id: i64, today: NaiveDate) -> ServiceResult<()> {
     let has_data: bool = conn.query_row(
-        "SELECT EXISTS (SELECT 1 FROM units) OR EXISTS (SELECT 1 FROM residents)",
+        "SELECT EXISTS (SELECT 1 FROM units) OR EXISTS (SELECT 1 FROM people)",
         [],
         |row| row.get(0),
     )?;
@@ -43,24 +51,27 @@ pub fn load(conn: &mut Connection, actor_id: i64, today: NaiveDate) -> ServiceRe
     let start_date = NaiveDate::from_ymd_opt(2025, 1, 1)
         .expect("valid date")
         .min(today);
-    for (index, (label, floor, name, role)) in ENTRIES.iter().enumerate() {
+    let mut next_address = 1;
+    for (label, floor, owner, resident) in ENTRIES {
         let unit_id = residency::create_unit(conn, actor_id, label, floor)?;
-        if let Some(name) = name {
-            residency::onboard(
+        for (name, role) in [(owner, UnitRole::Owner), (resident, UnitRole::Resident)] {
+            let Some(name) = name else { continue };
+            residency::assign(
                 conn,
                 actor_id,
-                &Onboarding {
+                &Placement {
                     unit_id,
-                    resident: ResidentRef::New {
-                        name: (*name).to_owned(),
-                        email: Some(format!("resident{}@example.test", index + 1)),
+                    person: PersonRef::New {
+                        name: name.to_owned(),
+                        email: Some(format!("pessoa{next_address}@example.test")),
                         phone: None,
                     },
-                    role: *role,
+                    role,
                     start_date,
                 },
                 today,
             )?;
+            next_address += 1;
         }
     }
     Ok(())
@@ -76,22 +87,24 @@ mod tests {
     }
 
     #[test]
-    fn loads_six_units_and_five_residents_into_an_empty_database() {
+    fn loads_six_units_five_owners_and_two_residents_into_an_empty_database() {
         let mut conn = open_in_memory().unwrap();
         let actor = users::insert(&conn, None, "admin@example.test", "hash").unwrap();
         load(&mut conn, actor, today()).unwrap();
         let count = |sql: &str| -> i64 { conn.query_row(sql, [], |r| r.get(0)).unwrap() };
         assert_eq!(count("SELECT count(*) FROM units"), 6);
-        assert_eq!(count("SELECT count(*) FROM residents"), 5);
-        assert_eq!(
-            count("SELECT count(*) FROM occupancies WHERE end_date IS NULL"),
-            5
-        );
+        assert_eq!(count("SELECT count(*) FROM people"), 7);
+        let active = |role: &str| {
+            count(&format!(
+                "SELECT count(*) FROM occupancies WHERE role = '{role}' AND end_date IS NULL"
+            ))
+        };
+        assert_eq!((active("owner"), active("resident")), (5, 2));
         assert_eq!(count("SELECT count(*) FROM users"), 1); // no account is created
-                                                            // Every demo resident is reachable by a (reserved, non-routable) test address.
+                                                            // Everyone is reachable by a (reserved, non-routable) test address.
         assert_eq!(
-            count("SELECT count(*) FROM residents WHERE email LIKE '%@example.test'"),
-            5
+            count("SELECT count(*) FROM people WHERE email LIKE '%@example.test'"),
+            7
         );
     }
 

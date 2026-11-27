@@ -1,31 +1,33 @@
-//! Occupancy date rules. Ported from `app/residency/domain/occupancy.ts`.
+//! Unit roles (owner, resident) and occupancy date rules. Ported from
+//! `app/residency/domain/occupancy.ts`.
 
 use chrono::NaiveDate;
 
 use crate::DomainError;
 
+/// How a person relates to a unit.
+///
+/// The **owner** is the condominium member: charges, payments and announcements concern them.
+/// The **resident** is whoever lives there (often a tenant) and is only informative.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ResidentRole {
+pub enum UnitRole {
     Owner,
-    Tenant,
-    Occupant,
+    Resident,
 }
 
-impl ResidentRole {
+impl UnitRole {
     /// The value stored in the database.
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Owner => "owner",
-            Self::Tenant => "tenant",
-            Self::Occupant => "occupant",
+            Self::Resident => "resident",
         }
     }
 
     pub fn parse(value: &str) -> Option<Self> {
         match value {
             "owner" => Some(Self::Owner),
-            "tenant" => Some(Self::Tenant),
-            "occupant" => Some(Self::Occupant),
+            "resident" => Some(Self::Resident),
             _ => None,
         }
     }
@@ -34,8 +36,7 @@ impl ResidentRole {
     pub fn label(self) -> &'static str {
         match self {
             Self::Owner => "Proprietário",
-            Self::Tenant => "Arrendatário",
-            Self::Occupant => "Ocupante",
+            Self::Resident => "Residente",
         }
     }
 }

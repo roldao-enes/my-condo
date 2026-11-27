@@ -30,7 +30,7 @@ const MATCH_TYPES: [MatchType; 2] = [MatchType::Exact, MatchType::Contains];
 const TAG_CATEGORIES: [TagCategory; 3] = [
     TagCategory::Recurring,
     TagCategory::Extraordinary,
-    TagCategory::ResidentPayment,
+    TagCategory::OwnerPayment,
 ];
 
 /// The income movement open in the payment dialog, and what its pickers mean.
@@ -83,7 +83,7 @@ impl Controller {
         self.accounts = data
             .accounts
             .iter()
-            .map(|a| (a.resident_id, a.unit_id))
+            .map(|a| (a.owner_id, a.unit_id))
             .collect();
         let account_labels: Vec<String> = data
             .accounts
@@ -91,7 +91,7 @@ impl Controller {
             .map(|a| format!("{} · {}", a.name, a.unit_label))
             .collect();
         backend.set_account_options(strings(
-            std::iter::once("Selecionar residente".to_owned()).chain(account_labels.clone()),
+            std::iter::once("Selecionar proprietário".to_owned()).chain(account_labels.clone()),
         ));
         backend.set_identity_options(strings(
             std::iter::once("Sem identificação".to_owned()).chain(account_labels),
@@ -288,14 +288,14 @@ impl Controller {
     ) {
         let intent = format!("register a charge {}", quote(description, 200));
         let parsed = (|| {
-            let (resident_id, unit_id) = self
+            let (owner_id, unit_id) = self
                 .account_at(account)
-                .ok_or_else(|| invalid("Selecione um residente."))?;
+                .ok_or_else(|| invalid("Selecione um proprietário."))?;
             let due_date = parse_input_date(due)
                 .ok_or_else(|| invalid("Introduza uma data válida (dd/mm/aaaa)."))?;
             let cents = parse_money(amount)?;
             Ok(NewCharge {
-                resident_id,
+                owner_id,
                 unit_id,
                 description: description.to_owned(),
                 due_date,
@@ -309,11 +309,11 @@ impl Controller {
             }
         };
         let note = format!(
-            "registered charge {} of {} due {} for resident #{} in unit #{}",
+            "registered charge {} of {} due {} for owner #{} in unit #{}",
             quote(&input.description, 200),
             money(input.amount),
             input.due_date,
-            input.resident_id,
+            input.owner_id,
             input.unit_id
         );
         self.mutate(
@@ -427,8 +427,8 @@ impl Controller {
             .filter(|c| c.outstanding > 0)
             .collect();
         open.sort_by_key(|c| {
-            let theirs = Some(c.charge.resident_id) == tx.resident_id
-                && Some(c.charge.unit_id) == tx.unit_id;
+            let theirs =
+                Some(c.charge.owner_id) == tx.owner_id && Some(c.charge.unit_id) == tx.unit_id;
             !theirs
         });
         let options = std::iter::once("Selecionar quota".to_owned()).chain(open.iter().map(|c| {
@@ -440,7 +440,7 @@ impl Controller {
                 money(c.outstanding)
             )
         }));
-        let identity = match (tx.resident_id, tx.unit_id) {
+        let identity = match (tx.owner_id, tx.unit_id) {
             (Some(r), Some(u)) => self
                 .accounts
                 .iter()
@@ -570,7 +570,7 @@ impl Controller {
             ui,
             "finance.transaction.identify",
             &format!("identify the payer of transaction #{tx_id}"),
-            "Identificação do residente atualizada.",
+            "Identificação do proprietário atualizada.",
             move |conn, actor, _| {
                 finance::identify(
                     conn,
@@ -583,7 +583,7 @@ impl Controller {
             },
             move |()| {
                 let payer = who.map_or("nobody".to_owned(), |(r, u)| {
-                    format!("resident #{r} in unit #{u}")
+                    format!("owner #{r} in unit #{u}")
                 });
                 format!(
                     "identified the payer of transaction #{tx_id} as {payer}{}",
@@ -619,7 +619,7 @@ impl Controller {
             else {
                 return;
             };
-            let account = match (tag.tag.resident_id, tag.tag.unit_id) {
+            let account = match (tag.tag.owner_id, tag.tag.unit_id) {
                 (Some(r), Some(u)) => self
                     .accounts
                     .iter()
@@ -661,7 +661,7 @@ impl Controller {
             .get(category.max(0) as usize)
             .copied()
             .unwrap_or(TagCategory::Recurring);
-        let who = (category == TagCategory::ResidentPayment)
+        let who = (category == TagCategory::OwnerPayment)
             .then(|| self.account_at(account))
             .flatten();
         let input = TagInput {
@@ -672,7 +672,7 @@ impl Controller {
                 .copied()
                 .unwrap_or(MatchType::Exact),
             category,
-            resident_id: who.map(|(r, _)| r),
+            owner_id: who.map(|(r, _)| r),
             unit_id: who.map(|(_, u)| u),
         };
         let note = format!(

@@ -180,8 +180,8 @@ mod tests {
     use crate::audit::{user_actor, DEFAULT_MAX_BYTES};
     use chrono::{Duration, NaiveDate};
     use condo_audit::{AuditEntry, AuditOutcome};
-    use condo_core::occupancy::ResidentRole;
-    use condo_db::residency::{self, Onboarding, ResidentRef};
+    use condo_core::occupancy::UnitRole;
+    use condo_db::residency::{self, PersonRef, Placement};
     use condo_db::{announcements, open_in_memory, users};
     use condo_mail::{MailError, OutgoingEmail};
 
@@ -196,17 +196,17 @@ mod tests {
         let mut conn = open_in_memory().unwrap();
         let admin = users::insert(&conn, None, "admin@example.test", "hash").unwrap();
         let unit = residency::create_unit(&mut conn, admin, "1A", "1").unwrap();
-        residency::onboard(
+        residency::assign(
             &mut conn,
             admin,
-            &Onboarding {
+            &Placement {
                 unit_id: unit,
-                resident: ResidentRef::New {
+                person: PersonRef::New {
                     name: "Ana".into(),
                     email: Some("ana@example.test".into()),
                     phone: None,
                 },
-                role: ResidentRole::Owner,
+                role: UnitRole::Owner,
                 start_date: NaiveDate::from_ymd_opt(2025, 1, 1).unwrap(),
             },
             NaiveDate::from_ymd_opt(2025, 6, 15).unwrap(),

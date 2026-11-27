@@ -31,7 +31,7 @@ impl View {
     pub fn search_hint(self) -> &'static str {
         match self {
             Self::Tags => "Pesquisar nome ou etiqueta...",
-            Self::Debt => "Pesquisar residente ou quota...",
+            Self::Debt => "Pesquisar proprietário ou quota...",
             _ => "Pesquisar movimento...",
         }
     }
@@ -43,8 +43,8 @@ pub enum CategoryFilter {
     Expense(ExpenseCategory),
     /// Income with something still to assign to a charge.
     Unmatched,
-    /// Income from an identified resident.
-    ResidentPayment,
+    /// Income from an identified owner.
+    OwnerPayment,
 }
 
 /// The choices of the classification filter for a view, label first.
@@ -57,7 +57,7 @@ pub fn category_filters(view: View) -> Vec<(&'static str, CategoryFilter)> {
     );
     if view == View::Transactions {
         filters.push(("Entradas por associar", CategoryFilter::Unmatched));
-        filters.push(("Pagamentos de residentes", CategoryFilter::ResidentPayment));
+        filters.push(("Pagamentos de proprietários", CategoryFilter::OwnerPayment));
     }
     filters
 }
@@ -112,7 +112,7 @@ pub struct TxRow {
     pub negative: bool,
     pub balance: String,
     pub expense: bool,
-    /// Expenses: the classification. Income: who paid, or "Residente por identificar".
+    /// Expenses: the classification. Income: who paid, or "Proprietário por identificar".
     pub who: String,
     /// Income: "12,00 € por associar" or "Associado". Empty for expenses.
     pub action: String,
@@ -202,10 +202,10 @@ fn tx_row(t: &TransactionView, paid: &HashMap<i64, i64>) -> TxRow {
         who: if expense {
             t.category.label().to_owned()
         } else {
-            match (&t.resident_name, &t.unit_label) {
+            match (&t.owner_name, &t.unit_label) {
                 (Some(name), Some(unit)) => format!("{name} · {unit}"),
                 (Some(name), None) => name.clone(),
-                _ => "Residente por identificar".to_owned(),
+                _ => "Proprietário por identificar".to_owned(),
             }
         },
         action: match (expense, left) {
@@ -300,7 +300,7 @@ pub fn page(data: &FinanceData, today: NaiveDate, filters: &Filters) -> FinanceP
         .filter(|t| match filters.category {
             CategoryFilter::All => true,
             CategoryFilter::Unmatched => t.amount > 0 && available(t, &paid) > 0,
-            CategoryFilter::ResidentPayment => t.amount > 0 && t.resident_id.is_some(),
+            CategoryFilter::OwnerPayment => t.amount > 0 && t.owner_id.is_some(),
             CategoryFilter::Expense(c) => t.amount < 0 && t.category == c,
         })
         .filter(|t| {
@@ -309,7 +309,7 @@ pub fn page(data: &FinanceData, today: NaiveDate, filters: &Filters) -> FinanceP
                     "{} {} {}",
                     t.description,
                     t.tag_name.as_deref().unwrap_or(""),
-                    t.resident_name.as_deref().unwrap_or("")
+                    t.owner_name.as_deref().unwrap_or("")
                 ),
                 query,
             )
@@ -374,7 +374,7 @@ pub fn page(data: &FinanceData, today: NaiveDate, filters: &Filters) -> FinanceP
                     "{} {} {} {}",
                     t.tag.name,
                     t.tag.pattern,
-                    t.resident_name.as_deref().unwrap_or(""),
+                    t.owner_name.as_deref().unwrap_or(""),
                     t.unit_label.as_deref().unwrap_or("")
                 ),
                 query,
@@ -389,7 +389,7 @@ pub fn page(data: &FinanceData, today: NaiveDate, filters: &Filters) -> FinanceP
                 MatchType::Contains => "Contém nome",
             },
             category: t.tag.category.label(),
-            who: match (&t.resident_name, &t.unit_label) {
+            who: match (&t.owner_name, &t.unit_label) {
                 (Some(name), Some(unit)) => format!("{name} · {unit}"),
                 _ => "—".to_owned(),
             },
@@ -456,18 +456,18 @@ mod tests {
             category: ExpenseCategory::Unclassified,
             tag_id: None,
             tag_name: None,
-            resident_id: None,
+            owner_id: None,
             unit_id: None,
-            resident_name: None,
+            owner_name: None,
             unit_label: None,
         }
     }
 
     fn data() -> FinanceData {
         let mut rent = tx(3, d(2025, 6, 10), "TRF Maria Silva", 5000, 9000);
-        rent.resident_id = Some(1);
+        rent.owner_id = Some(1);
         rent.unit_id = Some(1);
-        rent.resident_name = Some("Maria Silva".into());
+        rent.owner_name = Some("Maria Silva".into());
         rent.unit_label = Some("1.º Esq.".into());
         let mut power = tx(2, d(2025, 6, 2), "EDP Comercial", -3000, 4000);
         power.category = ExpenseCategory::Recurring;
@@ -478,7 +478,7 @@ mod tests {
             charges: vec![
                 Charge {
                     id: 1,
-                    resident_id: 1,
+                    owner_id: 1,
                     unit_id: 1,
                     name: "Maria Silva".into(),
                     unit_label: "1.º Esq.".into(),
@@ -488,7 +488,7 @@ mod tests {
                 },
                 Charge {
                     id: 2,
-                    resident_id: 1,
+                    owner_id: 1,
                     unit_id: 1,
                     name: "Maria Silva".into(),
                     unit_label: "1.º Esq.".into(),
@@ -504,7 +504,7 @@ mod tests {
                 amount: 3000,
             }],
             accounts: vec![Account {
-                resident_id: 1,
+                owner_id: 1,
                 unit_id: 1,
                 name: "Maria Silva".into(),
                 unit_label: "1.º Esq.".into(),
@@ -516,10 +516,10 @@ mod tests {
                     pattern: "edp comercial".into(),
                     match_type: MatchType::Contains,
                     category: TagCategory::Recurring,
-                    resident_id: None,
+                    owner_id: None,
                     unit_id: None,
                 },
-                resident_name: None,
+                owner_name: None,
                 unit_label: None,
             }],
         }
@@ -599,11 +599,11 @@ mod tests {
         };
         assert_eq!(page(&d0, today, &unmatched).transactions.len(), 1);
 
-        let residents = Filters {
-            category: CategoryFilter::ResidentPayment,
+        let owners = Filters {
+            category: CategoryFilter::OwnerPayment,
             ..Filters::default()
         };
-        assert_eq!(page(&d0, today, &residents).transactions[0].id, 3);
+        assert_eq!(page(&d0, today, &owners).transactions[0].id, 3);
 
         let recurring = Filters {
             category: CategoryFilter::Expense(ExpenseCategory::Recurring),
@@ -611,7 +611,7 @@ mod tests {
         };
         assert_eq!(page(&d0, today, &recurring).transactions[0].id, 2);
 
-        // Searches descriptions, tag names and resident names, ignoring case.
+        // Searches descriptions, tag names and owner names, ignoring case.
         for (query, found) in [("edp", 1), ("ELETRICIDADE", 1), ("maria", 1), ("nada", 0)] {
             let filters = Filters {
                 query: query.into(),

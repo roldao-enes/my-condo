@@ -9,7 +9,7 @@ file over any other doc when they disagree.
 
 ## 1. What this is, in one paragraph
 
-A **native desktop app** for running one condominium in Portugal: residents and units, bank
+A **native desktop app** for running one condominium in Portugal: owners, residents and units, bank
 statement import and payment matching, and email announcements. There is **no server, no browser
 and no web view**. The UI is [Slint](https://slint.dev) (think "React-like declarative UI, compiled
 to native code"), data is a single **SQLite** file, and the UI language is pt-PT.
@@ -59,7 +59,7 @@ cargo test --workspace --locked                          # all tests
 * On Linux run `./scripts/ci/linux-deps.sh` first.
 * Always use `CONDO_DATA_DIR` while developing, otherwise you are working on your real data folder.
 * In the app, **Definições → Carregar dados de demonstração** fills an empty database with sample
-  units and residents. First run asks you to create the administrator.
+  units, owners and residents. First run asks you to create the administrator.
 * CI ([desktop.yml](../.github/workflows/desktop.yml)) runs fmt, clippy and tests on Ubuntu 22.04,
   Windows and macOS. A PR that passes locally can still fail on Windows (file renames, line
   endings), so watch the matrix.
@@ -104,6 +104,21 @@ Handy habits:
 * `cargo test -p condo-core name_of_test` runs one test; add `-- --nocapture` to see `println!`.
 * In VS Code use the **rust-analyzer** extension; it shows inferred types inline, which is the
   fastest way to learn.
+
+### Owners and residents
+
+Two roles relate a **person** (table `people`) to a **unit**, both dated in `occupancies`:
+
+* the **owner** is the condominium member: the one charged quotas (`owner_id` on charges, payment
+  tags and movements) and written to by announcements. A unit has one active owner; a sale is
+  "end the old owner, then set the new one", which keeps old charges with the previous owner.
+* the **resident** lives there (often a tenant) and is **informational only**: no charges, no
+  payments, no emails. A unit has at most one; setting a new one ends the previous.
+
+The "one active owner / resident" rule is checked by `residency::assign` (with a friendly message)
+and by triggers (`occupancies_one_active_*`). It is not a unique index on purpose: a database from
+before the rule can hold several active owners, and upgrading must not fail on them. The stored
+tag category is still called `resident_payment`, as before; it means an owner's payment.
 
 ## 5. Conventions you must keep
 
@@ -158,8 +173,8 @@ radius.
 * **Why critical**: this is the only copy of the user's data; there is no server backup.
 * **Invariants**: `PRAGMA foreign_keys=ON` on every connection; WAL mode; one `BEGIN IMMEDIATE` per
   mutation; audit row in the same transaction; migrations append-only; the schema's `CHECK`
-  constraints are part of the business rules (for example a resident payment tag must have a
-  resident and unit; a payment link requires `amount > 0`).
+  constraints are part of the business rules (for example an owner payment tag must have an
+  owner and unit; a payment link requires `amount > 0`).
 * **Gotcha**: the background mail thread opens its **own** `Connection`. SQLite WAL plus a 5 s busy
   timeout makes that safe; do not share one connection across threads.
 
@@ -237,13 +252,13 @@ radius.
 
 ## 7. How the pieces fit: following one request end to end
 
-Offboarding a resident is the shortest complete slice. Read these in order:
+Ending an owner's or resident's stay is the shortest complete slice. Read these in order:
 
 1. **UI**: `OffboardDialog` in [residency.slint](../crates/condo-ui/ui/residency.slint) collects the
    date and calls a `Backend` callback.
 2. **Controller**: the callback handler in [controller.rs](../crates/condo-ui/src/controller.rs)
    parses the date and calls `self.mutate(...)` with a closure.
-3. **Service**: `offboard` in [condo-db/src/residency.rs](../crates/condo-db/src/residency.rs)
+3. **Service**: `end_relationship` in [condo-db/src/residency.rs](../crates/condo-db/src/residency.rs)
    validates, updates and writes the audit row in one transaction.
 4. **Back up the stack**: `mutate` audits the result to the file log, closes the dialog, shows a
    notice, and calls `refresh()`, which re-reads the directory and pushes new models to Slint.
@@ -316,7 +331,7 @@ because it touches an open decision. Effort: **S** about half a day, **M** one t
 | 3 | **Add administrator** | Listed as not implemented. `auth::create_admin` already exists and is tested; this is mostly a dialog plus `mutate`. | [condo-db/src/auth.rs:89](../crates/condo-db/src/auth.rs#L89) |
 | 4 | **"Open data folder" button** and an **About box** (version, licence notice, data path) | Pure UI plus `paths.data_dir()`. The settings screen already shows the path. Version comes from `CARGO_PKG_VERSION`. | `ui/settings.slint`, [paths.rs](../crates/condo-app/src/paths.rs) |
 | 5 | **Log file for audit write failures** | `AuditTrail` reports write failures on stderr, which is invisible in Windows GUI builds. Write a fallback error file in the data folder. | [condo-app/src/audit.rs](../crates/condo-app/src/audit.rs) |
-| 6 | **Copy-to-clipboard for individual values** (email of a resident, IBAN-style references) | `Clipboard` is already behind a trait in `files.rs` with a test double; the `copy.svg` icon is already bundled. | [condo-ui/src/files.rs](../crates/condo-ui/src/files.rs) |
+| 6 | **Copy-to-clipboard for individual values** (email of a person, IBAN-style references) | `Clipboard` is already behind a trait in `files.rs` with a test double; the `copy.svg` icon is already bundled. | [condo-ui/src/files.rs](../crates/condo-ui/src/files.rs) |
 
 ### Next (S to M)
 
