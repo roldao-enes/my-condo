@@ -808,7 +808,7 @@ dependencies = [
 
 [[package]]
 name = "condo-app"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "chrono",
  "condo-audit",
@@ -826,7 +826,7 @@ dependencies = [
 
 [[package]]
 name = "condo-audit"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "chrono",
  "serde",
@@ -837,7 +837,7 @@ dependencies = [
 
 [[package]]
 name = "condo-core"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -848,7 +848,7 @@ dependencies = [
 
 [[package]]
 name = "condo-db"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "argon2",
  "chrono",
@@ -864,7 +864,7 @@ dependencies = [
 
 [[package]]
 name = "condo-mail"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "chrono",
  "condo-core",
@@ -875,7 +875,7 @@ dependencies = [
 
 [[package]]
 name = "condo-ui"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "arboard",
  "chrono",
@@ -898,7 +898,7 @@ dependencies = [
 
 [[package]]
 name = "condo-update"
-version = "1.2.0"
+version = "1.3.0"
 dependencies = [
  "base64 0.22.1",
  "ed25519-dalek",

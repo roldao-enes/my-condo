@@ -1,6 +1,6 @@
 [package]
 name = "condo-ui"
-version = "1.2.0"
+version = "1.3.0"
 description = "Meu Condominio: the desktop application (Slint UI over the condo-* crates)"
 edition.workspace = true
 rust-version.workspace = true
