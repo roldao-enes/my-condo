@@ -567,7 +567,19 @@ export component PeoplePage inherits VerticalLayout {
     HorizontalLayout {
         spacing: 14px;
         Segmented {
-            width: 300px;
+            width: 320px;
+            first: "Proprietários";
+            second: "Residentes";
+            first-count: Backend.owners-count;
+            second-count: Backend.residents-count;
+            second-selected: Backend.residents-tab;
+            chose(residents) => {
+                Backend.set-residents-tab(residents);
+            }
+        }
+
+        Segmented {
+            width: 260px;
             first: "Ativos";
             second: "Histórico";
             first-count: Backend.active-count;
@@ -728,11 +740,21 @@ export component PeoplePage inherits VerticalLayout {
                         }
                     }
 
+                    IconButton {
+                        x: row.width - (rel.active ? 92px : 52px);
+                        y: (parent.height - self.height) / 2;
+                        icon: Icons.pencil;
+                        label: "Editar " + rel.name;
+                        clicked => {
+                            Backend.open-edit-person(rel.person-id);
+                        }
+                    }
+
                     if rel.active: IconButton {
                         x: row.width - 52px;
                         y: (parent.height - self.height) / 2;
                         icon: Icons.log-out;
-                        label: "Registar saída de " + rel.name;
+                        label: rel.role == "Proprietário" ? "Substituir proprietário " + rel.name : "Registar saída de " + rel.name;
                         clicked => {
                             Backend.open-offboard(rel.id);
                         }
@@ -888,12 +910,27 @@ export component OnboardDialog inherits Modal {
 }
 
 export component OffboardDialog inherits Modal {
-    title: "Registar saída";
+    // An owner never leaves alone: the next owner is named in the same step.
+    property <bool> owner: Backend.offboard-target.role == "Proprietário";
+    property <bool> existing: false;
+    property <string> name-text;
+    property <string> email-text;
+    property <string> phone-text;
+    property <int> person-index: 0;
+    title: root.owner ? "Substituir proprietário" : "Registar saída";
+    card-width: root.owner ? 540px : 480px;
     close => {
         Backend.close-dialog();
     }
     init => {
         date.focus-field();
+    }
+    function submit() {
+        if (root.owner) {
+            Backend.replace-owner(Backend.offboard-target.id, root.existing, root.person-index, root.name-text, root.email-text, root.phone-text, date.text);
+        } else {
+            Backend.offboard(Backend.offboard-target.id, date.text);
+        }
     }
 
     HorizontalLayout {
@@ -923,18 +960,53 @@ export component OffboardDialog inherits Modal {
     }
 
     Text {
-        text: "A relação com esta fração será encerrada. Os dados e o histórico serão preservados.";
+        text: root.owner ? "Uma fração não pode ficar sem proprietário: indique quem fica no lugar de " + Backend.offboard-target.name + ". Os dados e o histórico serão preservados." : "A relação com esta fração será encerrada. Os dados e o histórico serão preservados.";
         font-size: 14px;
         color: Theme.muted;
         wrap: word-wrap;
     }
 
+    if root.owner && Backend.person-options.length > 1: Segmented {
+        first: "Nova pessoa";
+        second: "Pessoa existente";
+        second-selected: root.existing;
+        chose(second) => {
+            root.existing = second;
+        }
+    }
+    if root.owner && root.existing: SelectField {
+        label: "Novo proprietário";
+        model: Backend.person-options;
+        current-index <=> root.person-index;
+    }
+    if root.owner && !root.existing: TextField {
+        label: "Nome completo do novo proprietário";
+        text <=> root.name-text;
+    }
+    if root.owner && !root.existing: HorizontalLayout {
+        spacing: 12px;
+        TextField {
+            label: "Email";
+            optional: true;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            text <=> root.email-text;
+        }
+
+        TextField {
+            label: "Telefone";
+            optional: true;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            text <=> root.phone-text;
+        }
+    }
     date := TextField {
-        label: "Data de saída";
+        label: root.owner ? "Data da mudança" : "Data de saída";
         placeholder: "dd/mm/aaaa";
         text: Backend.today-text;
         accepted => {
-            Backend.offboard(Backend.offboard-target.id, self.text);
+            root.submit();
         }
     }
 
@@ -942,9 +1014,69 @@ export component OffboardDialog inherits Modal {
         text: Backend.form-error;
     }
     FormActions {
-        submit-text: "Confirmar saída";
+        submit-text: root.owner ? "Substituir proprietário" : "Confirmar saída";
         submit => {
-            Backend.offboard(Backend.offboard-target.id, date.text);
+            root.submit();
+        }
+        cancel => {
+            Backend.close-dialog();
+        }
+    }
+}
+
+export component EditPersonDialog inherits Modal {
+    title: "Editar pessoa";
+    card-width: 480px;
+    close => {
+        Backend.close-dialog();
+    }
+    init => {
+        name.focus-field();
+    }
+    function submit() {
+        Backend.save-person(Backend.edit-target.person-id, name.text, email.text, phone.text);
+    }
+
+    name := TextField {
+        label: "Nome completo";
+        text: Backend.edit-target.name;
+        accepted => {
+            root.submit();
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 12px;
+        email := TextField {
+            label: "Email";
+            optional: true;
+            text: Backend.edit-target.email;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            accepted => {
+                root.submit();
+            }
+        }
+
+        phone := TextField {
+            label: "Telefone";
+            optional: true;
+            text: Backend.edit-target.phone;
+            horizontal-stretch: 1;
+            preferred-width: 0px;
+            accepted => {
+                root.submit();
+            }
+        }
+    }
+
+    if Backend.form-error != "": InlineError {
+        text: Backend.form-error;
+    }
+    FormActions {
+        submit-text: "Guardar";
+        submit => {
+            root.submit();
         }
         cancel => {
             Backend.close-dialog();

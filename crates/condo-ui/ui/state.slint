@@ -14,6 +14,7 @@ export struct UnitRow {
 
 export struct RelationRow {
     id: int,
+    person-id: int,
     name: string,
     initials: string,
     // Email, phone, or "Sem contacto".
@@ -177,6 +178,10 @@ export global Backend {
     in property <int> active-count;
     in property <int> history-count;
     in property <bool> history: false;
+    // People page tab: false owners, true residents.
+    in property <bool> residents-tab: false;
+    in property <int> owners-count;
+    in property <int> residents-count;
     in property <string> empty-title;
     in property <string> empty-text;
     // Choices for the pickers, in the same order as the ids Rust keeps.
@@ -189,13 +194,14 @@ export global Backend {
     in property <string> today-text;
 
     // "announcement" (page): one announcement. Dialogs also: "new-announcement" | "queue-confirm"
-    // "" | "unit" | "onboard" | "offboard" | "detail" | "restore" | "import"
+    // "" | "unit" | "onboard" | "offboard" | "edit-person" | "detail" | "restore" | "import"
     in-out property <string> dialog;
     in property <int> detail-unit-id;
     in property <string> detail-title;
     in property <string> detail-floor;
     in property <[RelationRow]> detail-rows;
     in property <RelationRow> offboard-target;
+    in property <RelationRow> edit-target;
 
     // --- Settings -------------------------------------------------------------------------
     in property <string> smtp-host;
@@ -349,6 +355,11 @@ export global Backend {
     callback open-unit-detail(int);
     callback open-onboard(int, int);
     callback open-offboard(int);
+    callback set-residents-tab(bool);
+    // person id
+    callback open-edit-person(int);
+    // person id, name, email, phone
+    callback save-person(int, string, string, string);
     callback close-dialog();
     // label, floor
     callback create-unit(string, string);
@@ -356,4 +367,6 @@ export global Backend {
     callback onboard(int, bool, int, string, string, string, int, string);
     // relationship id, exit date
     callback offboard(int, string);
+    // owner relationship id, successor is an existing person?, person index, name, email, phone, change date
+    callback replace-owner(int, bool, int, string, string, string, string);
 }

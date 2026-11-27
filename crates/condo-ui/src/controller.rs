@@ -89,6 +89,8 @@ pub struct Controller {
     now: Clock,
     query: String,
     history: bool,
+    /// People page tab: owners (false) or residents (true).
+    residents_tab: bool,
     directory: Directory,
     /// Ids behind the picker rows; index 0 is the "select" placeholder, so it holds `None`.
     unit_ids: Vec<Option<i64>>,
@@ -113,6 +115,7 @@ fn unit_row(u: &UnitView) -> UnitRow {
 fn relation_row(r: &RelationView) -> RelationRow {
     RelationRow {
         id: r.id as i32,
+        person_id: r.person_id as i32,
         name: r.name.clone().into(),
         initials: r.initials.clone().into(),
         contact: r.contact.clone().into(),
@@ -191,6 +194,7 @@ impl Controller {
             now,
             query: String::new(),
             history: false,
+            residents_tab: false,
             directory: Directory {
                 units: vec![],
                 people: vec![],
@@ -277,6 +281,7 @@ impl Controller {
         backend.set_screen("main".into());
         self.query.clear();
         self.history = false;
+        self.residents_tab = false;
         self.show_page(ui, "overview");
         if let Some(text) = self.upgrade_notice.take() {
             self.notice(ui, "success", &text);
@@ -408,6 +413,7 @@ impl Controller {
         }
         self.query.clear();
         self.history = false;
+        self.residents_tab = false;
         let backend = ui.global::<Backend>();
         backend.set_notice_text("".into());
         backend.set_form_error("".into());
@@ -424,6 +430,7 @@ impl Controller {
         };
         backend.set_page(page.into());
         backend.set_history(self.history);
+        backend.set_residents_tab(self.residents_tab);
         self.refresh(ui);
     }
 
@@ -435,6 +442,15 @@ impl Controller {
     pub fn set_history(&mut self, ui: &AppWindow, history: bool) {
         self.history = history;
         ui.global::<Backend>().set_history(history);
+        self.refresh(ui);
+    }
+
+    pub fn set_residents_tab(&mut self, ui: &AppWindow, residents: bool) {
+        self.residents_tab = residents;
+        self.history = false;
+        let backend = ui.global::<Backend>();
+        backend.set_residents_tab(residents);
+        backend.set_history(false);
         self.refresh(ui);
     }
 
@@ -511,7 +527,14 @@ impl Controller {
         backend.set_units(model(units.rows.iter().map(unit_row).collect()));
         backend.set_units_count_text(units.count_text.clone().into());
 
-        let people = viewmodel::people_page(dir, &self.query, self.history);
+        let tab_role = if self.residents_tab {
+            UnitRole::Resident
+        } else {
+            UnitRole::Owner
+        };
+        let people = viewmodel::people_page(dir, &self.query, self.history, tab_role);
+        backend.set_owners_count(people.owners_count as i32);
+        backend.set_residents_count(people.residents_count as i32);
         backend.set_relationships(model(people.rows.iter().map(relation_row).collect()));
         backend.set_active_count(people.active_count as i32);
         backend.set_history_count(people.history_count as i32);
@@ -837,6 +860,114 @@ impl Controller {
             "Saída registada. O histórico foi preservado.",
             move |conn, actor, today| residency::end_relationship(conn, actor, id, end_date, today),
             |()| format!("offboarded occupancy #{id} on {end_date}"),
+        );
+    }
+
+    pub fn open_edit_person(&mut self, ui: &AppWindow, person_id: i32) {
+        let Some(person) = self
+            .directory
+            .people
+            .iter()
+            .find(|p| p.id == i64::from(person_id))
+        else {
+            return;
+        };
+        let row = RelationRow {
+            id: 0,
+            person_id,
+            name: person.name.clone().into(),
+            initials: initials(&person.name).into(),
+            contact: "".into(),
+            unit_label: "".into(),
+            role: "".into(),
+            start: "".into(),
+            end: "".into(),
+            active: true,
+            email: person.email.clone().unwrap_or_default().into(),
+            phone: person.phone.clone().unwrap_or_default().into(),
+        };
+        ui.global::<Backend>().set_edit_target(row);
+        self.open_dialog(ui, "edit-person");
+    }
+
+    pub fn save_person(
+        &mut self,
+        ui: &AppWindow,
+        person_id: i32,
+        name: &str,
+        email: &str,
+        phone: &str,
+    ) {
+        let id = i64::from(person_id);
+        let (name, email, phone) = (name.to_owned(), email.to_owned(), phone.to_owned());
+        self.mutate(
+            ui,
+            "residency.person.update",
+            &format!("edit person #{id}"),
+            "Dados atualizados.",
+            move |conn, actor, _| {
+                residency::update_person(conn, actor, id, &name, Some(&email), Some(&phone))
+            },
+            |()| format!("edited person #{id}"),
+        );
+    }
+
+    /// An owner leaves only when the next owner is named, so the unit is never without one.
+    #[allow(clippy::too_many_arguments)]
+    pub fn replace_owner(
+        &mut self,
+        ui: &AppWindow,
+        relationship_id: i32,
+        existing: bool,
+        person_index: i32,
+        name: &str,
+        email: &str,
+        phone: &str,
+        date_text: &str,
+    ) {
+        let id = i64::from(relationship_id);
+        let actor = self.actor();
+        let invalid = |this: &Self, why: &str| {
+            let error = ServiceError::InvalidInput(why.to_owned());
+            this.reject(
+                ui,
+                "residency.owner.replace",
+                &actor,
+                &format!("replace the owner of occupancy #{id}"),
+                &error,
+            );
+        };
+        let Some(change_date) = parse_input_date(date_text) else {
+            return invalid(self, "Introduza uma data válida (dd/mm/aaaa).");
+        };
+        let next = if existing {
+            match self
+                .person_ids
+                .get(person_index.max(0) as usize)
+                .copied()
+                .flatten()
+            {
+                Some(person) => PersonRef::Existing(person),
+                None => return invalid(self, "Selecione o novo proprietário."),
+            }
+        } else {
+            PersonRef::New {
+                name: name.to_owned(),
+                email: Some(email.to_owned()),
+                phone: Some(phone.to_owned()),
+            }
+        };
+        self.mutate(
+            ui,
+            "residency.owner.replace",
+            &format!("replace the owner of occupancy #{id} on {change_date}"),
+            "Novo proprietário indicado. O histórico foi preservado.",
+            move |conn, actor, today| {
+                residency::replace_owner(conn, actor, id, &next, change_date, today)
+            },
+            |new_id| {
+                format!("replaced occupancy #{id} with owner occupancy #{new_id} on {change_date}")
+            },
         );
     }
 
@@ -1228,6 +1359,37 @@ pub fn attach(ui: &AppWindow, controller: Controller) -> Rc<RefCell<Controller>>
     on!(on_open_onboard, |c, ui, id, role| c
         .open_onboard(&ui, id, role));
     on!(on_open_offboard, |c, ui, id| c.open_offboard(&ui, id));
+    on!(on_set_residents_tab, |c, ui, residents| c
+        .set_residents_tab(&ui, residents));
+    on!(on_open_edit_person, |c, ui, id| c.open_edit_person(&ui, id));
+    on!(on_save_person, |c, ui, id, name, email, phone| c
+        .save_person(
+            &ui,
+            id,
+            name.as_str(),
+            email.as_str(),
+            phone.as_str()
+        ));
+    on!(on_replace_owner, |c,
+                           ui,
+                           id,
+                           existing,
+                           person,
+                           name,
+                           email,
+                           phone,
+                           date| {
+        c.replace_owner(
+            &ui,
+            id,
+            existing,
+            person,
+            name.as_str(),
+            email.as_str(),
+            phone.as_str(),
+            date.as_str(),
+        )
+    });
     on!(on_close_dialog, |c, ui| c.close_dialog(&ui));
     on!(on_create_unit, |c, ui, label, floor| c.create_unit(
         &ui,

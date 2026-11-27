@@ -213,9 +213,27 @@ fn building_up_a_condominium_end_to_end() {
             h.backend().get_active_count(),
             h.backend().get_history_count()
         ),
-        (3, 0)
+        (1, 0)
     );
+    assert_eq!(
+        (
+            h.backend().get_owners_count(),
+            h.backend().get_residents_count()
+        ),
+        (1, 2)
+    );
+    assert_eq!(names(&h), ["Maria Silva"]);
     h.snapshot("16-people");
+    // Residents have their own tab.
+    h.backend().invoke_set_residents_tab(true);
+    assert_eq!(
+        (
+            h.backend().get_active_count(),
+            h.backend().get_history_count()
+        ),
+        (2, 0)
+    );
+    h.snapshot("16-people-residents");
     let alvaro = rows(h.backend().get_relationships())
         .into_iter()
         .find(|r| r.name.as_str() == "Álvaro Maria")
@@ -244,7 +262,7 @@ fn building_up_a_condominium_end_to_end() {
             h.backend().get_active_count(),
             h.backend().get_history_count()
         ),
-        (2, 1)
+        (1, 1)
     );
     // Leaving twice is refused.
     h.backend().invoke_open_offboard(alvaro.id);
@@ -331,7 +349,87 @@ fn building_up_a_condominium_end_to_end() {
             h.backend().get_active_count(),
             h.backend().get_history_count()
         ),
-        (3, 1)
+        (2, 0)
+    );
+    h.backend().invoke_set_residents_tab(true);
+    assert_eq!(
+        (
+            h.backend().get_active_count(),
+            h.backend().get_history_count()
+        ),
+        (1, 1)
+    );
+}
+
+#[test]
+fn people_can_be_edited_and_an_owner_only_leaves_with_a_successor() {
+    let h = Harness::fresh();
+    setup_admin(&h);
+    add_unit(&h, "1A", "1");
+    onboard(&h, 1, "Maria Silva", "", 0, "01/01/2025");
+    h.backend().invoke_navigate("people".into());
+    let maria = rows(h.backend().get_relationships())[0].clone();
+
+    // Editing: validated, applied everywhere the person shows.
+    h.backend().invoke_open_edit_person(maria.person_id);
+    assert_eq!(h.dialog(), "edit-person");
+    assert_eq!(h.backend().get_edit_target().name.as_str(), "Maria Silva");
+    h.backend().invoke_save_person(
+        maria.person_id,
+        "Maria Silva".into(),
+        "not-an-email".into(),
+        "".into(),
+    );
+    assert!(h.error().contains("Email"), "{}", h.error());
+    h.backend().invoke_save_person(
+        maria.person_id,
+        "Maria S. Costa".into(),
+        "maria@example.test".into(),
+        "912 345 678".into(),
+    );
+    assert_eq!(h.notice(), "Dados atualizados.");
+    assert_eq!(h.dialog(), "");
+    let edited = rows(h.backend().get_relationships())[0].clone();
+    assert_eq!(
+        (edited.name.as_str(), edited.contact.as_str()),
+        ("Maria S. Costa", "maria@example.test")
+    );
+
+    // An owner cannot just leave: the dialog asks for the successor and the plain exit is refused.
+    h.backend().invoke_open_offboard(maria.id);
+    assert_eq!(h.dialog(), "offboard");
+    h.backend().invoke_offboard(maria.id, "01/05/2025".into());
+    assert!(h.error().contains("seguinte"), "{}", h.error());
+    h.backend().invoke_replace_owner(
+        maria.id,
+        false,
+        0,
+        "".into(),
+        "".into(),
+        "".into(),
+        "01/05/2025".into(),
+    );
+    assert!(h.error().contains("nome"), "{}", h.error());
+    h.backend().invoke_replace_owner(
+        maria.id,
+        false,
+        0,
+        "Rui Carvalho".into(),
+        "".into(),
+        "".into(),
+        "01/05/2025".into(),
+    );
+    assert_eq!(
+        h.notice(),
+        "Novo proprietário indicado. O histórico foi preservado."
+    );
+    assert_eq!(names(&h), ["Rui Carvalho"]);
+    assert_eq!(
+        (
+            h.backend().get_active_count(),
+            h.backend().get_history_count()
+        ),
+        (1, 1)
     );
 }
 

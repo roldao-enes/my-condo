@@ -97,6 +97,67 @@ fn parse_new_person(
     Ok((name, email, phone))
 }
 
+/// The id of the person being placed, creating them when new.
+fn resolve_person(
+    tx: &Transaction,
+    person: &PersonRef,
+    new_person: Option<NewPerson>,
+) -> ServiceResult<i64> {
+    match (person, new_person) {
+        (PersonRef::Existing(id), _) => {
+            let exists: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM people WHERE id = ?1)",
+                [id],
+                |row| row.get(0),
+            )?;
+            if !exists {
+                return Err(ServiceError::NotFound("Pessoa não encontrada.".into()));
+            }
+            Ok(*id)
+        }
+        (_, Some((name, email, phone))) => {
+            tx.execute(
+                "INSERT INTO people (name, email, phone) VALUES (?1, ?2, ?3)",
+                params![name, email, phone],
+            )?;
+            Ok(tx.last_insert_rowid())
+        }
+        (PersonRef::New { .. }, None) => unreachable!("new person fields are always parsed"),
+    }
+}
+
+/// Records the relationship and its audit event.
+fn insert_occupancy(
+    tx: &Transaction,
+    actor_id: i64,
+    unit_id: i64,
+    person_id: i64,
+    role: UnitRole,
+    start_date: NaiveDate,
+) -> ServiceResult<i64> {
+    tx.execute(
+        "INSERT INTO occupancies (unit_id, person_id, role, start_date) VALUES (?1, ?2, ?3, ?4)",
+        params![unit_id, person_id, role.as_str(), start_date],
+    )?;
+    let occupancy_id = tx.last_insert_rowid();
+    audit_events::record(
+        tx,
+        actor_id,
+        match role {
+            UnitRole::Owner => "unit.owner_set",
+            UnitRole::Resident => "unit.resident_set",
+        },
+        "occupancy",
+        occupancy_id,
+        Some(&json!({
+            "unitId": unit_id,
+            "personId": person_id,
+            "startDate": start_date.to_string(),
+        })),
+    )?;
+    Ok(occupancy_id)
+}
+
 /// Makes a person the owner or the resident of a unit. `today` is the current Lisbon date.
 /// Returns the new occupancy id.
 ///
@@ -131,27 +192,7 @@ pub fn assign(
     if !unit_exists {
         return Err(ServiceError::NotFound("Fração não encontrada.".into()));
     }
-    let person_id = match (&input.person, new_person) {
-        (PersonRef::Existing(id), _) => {
-            let exists: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM people WHERE id = ?1)",
-                [id],
-                |row| row.get(0),
-            )?;
-            if !exists {
-                return Err(ServiceError::NotFound("Pessoa não encontrada.".into()));
-            }
-            *id
-        }
-        (_, Some((name, email, phone))) => {
-            tx.execute(
-                "INSERT INTO people (name, email, phone) VALUES (?1, ?2, ?3)",
-                params![name, email, phone],
-            )?;
-            tx.last_insert_rowid()
-        }
-        (PersonRef::New { .. }, None) => unreachable!("new person fields are always parsed"),
-    };
+    let person_id = resolve_person(&tx, &input.person, new_person)?;
 
     match input.role {
         UnitRole::Owner => {
@@ -172,30 +213,13 @@ pub fn assign(
         }
     }
 
-    tx.execute(
-        "INSERT INTO occupancies (unit_id, person_id, role, start_date) VALUES (?1, ?2, ?3, ?4)",
-        params![
-            input.unit_id,
-            person_id,
-            input.role.as_str(),
-            input.start_date
-        ],
-    )?;
-    let occupancy_id = tx.last_insert_rowid();
-    audit_events::record(
+    let occupancy_id = insert_occupancy(
         &tx,
         actor_id,
-        match input.role {
-            UnitRole::Owner => "unit.owner_set",
-            UnitRole::Resident => "unit.resident_set",
-        },
-        "occupancy",
-        occupancy_id,
-        Some(&json!({
-            "unitId": input.unit_id,
-            "personId": person_id,
-            "startDate": input.start_date.to_string(),
-        })),
+        input.unit_id,
+        person_id,
+        input.role,
+        input.start_date,
     )?;
     tx.commit()?;
     Ok(occupancy_id)
@@ -246,7 +270,8 @@ fn end_current_residents(
     Ok(())
 }
 
-/// Ends the ownership or residency recorded by `occupancy_id`. `today` is the current Lisbon date.
+/// Ends a residency. An ownership can only end through [`replace_owner`], so a unit is never
+/// left without an owner. `today` is the current Lisbon date.
 pub fn end_relationship(
     conn: &mut Connection,
     actor_id: i64,
@@ -270,6 +295,11 @@ pub fn end_relationship(
             "Esta relação já foi encerrada.".into(),
         ));
     }
+    if role == "owner" {
+        return Err(ServiceError::Rejected(
+            "Um proprietário só sai quando é indicado o seguinte.".into(),
+        ));
+    }
     if end_date < start_date {
         return Err(ServiceError::InvalidInput(
             "A data de saída não pode ser anterior à data de entrada.".into(),
@@ -287,15 +317,119 @@ pub fn end_relationship(
     audit_events::record(
         &tx,
         actor_id,
-        if role == "owner" {
-            "unit.owner_ended"
-        } else {
-            "unit.resident_ended"
-        },
+        "unit.resident_ended",
         "occupancy",
         occupancy_id,
         Some(&json!({ "endDate": end_date.to_string() })),
     )?;
+    tx.commit()?;
+    Ok(())
+}
+
+/// Hands a unit over to a new owner: the current owner (`occupancy_id`) leaves and `next` takes
+/// over on `change_date`, in one transaction. The old owner's charges stay with them.
+pub fn replace_owner(
+    conn: &mut Connection,
+    actor_id: i64,
+    occupancy_id: i64,
+    next: &PersonRef,
+    change_date: NaiveDate,
+    today: NaiveDate,
+) -> ServiceResult<i64> {
+    let new_person = match next {
+        PersonRef::Existing(_) => None,
+        PersonRef::New { name, email, phone } => {
+            Some(parse_new_person(name, email.as_deref(), phone.as_deref())?)
+        }
+    };
+    let tx = write_tx(conn)?;
+    let current: Option<(String, i64, i64, NaiveDate, Option<NaiveDate>)> = tx
+        .query_row(
+            "SELECT role, unit_id, person_id, start_date, end_date FROM occupancies WHERE id = ?1",
+            [occupancy_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
+        )
+        .optional()?;
+    let Some((role, unit_id, old_person, start_date, end)) = current else {
+        return Err(ServiceError::NotFound("Relação não encontrada.".into()));
+    };
+    if role != "owner" {
+        return Err(ServiceError::InvalidInput(
+            "Esta relação não é de um proprietário.".into(),
+        ));
+    }
+    if end.is_some() {
+        return Err(ServiceError::Conflict(
+            "Esta relação já foi encerrada.".into(),
+        ));
+    }
+    if change_date < start_date {
+        return Err(ServiceError::InvalidInput(
+            "A data de saída não pode ser anterior à data de entrada.".into(),
+        ));
+    }
+    if change_date > today {
+        return Err(ServiceError::Rejected(
+            "A saída não pode ser futura.".into(),
+        ));
+    }
+    let person_id = resolve_person(&tx, next, new_person)?;
+    if person_id == old_person {
+        return Err(ServiceError::Conflict(
+            "O novo proprietário tem de ser outra pessoa.".into(),
+        ));
+    }
+    tx.execute(
+        "UPDATE occupancies SET end_date = ?1 WHERE id = ?2",
+        params![change_date, occupancy_id],
+    )?;
+    audit_events::record(
+        &tx,
+        actor_id,
+        "unit.owner_ended",
+        "occupancy",
+        occupancy_id,
+        Some(&json!({ "endDate": change_date.to_string(), "replaced": true })),
+    )?;
+    let new_id = insert_occupancy(
+        &tx,
+        actor_id,
+        unit_id,
+        person_id,
+        UnitRole::Owner,
+        change_date,
+    )?;
+    tx.commit()?;
+    Ok(new_id)
+}
+
+/// Corrects a person's name and contacts. They apply everywhere the person appears.
+pub fn update_person(
+    conn: &mut Connection,
+    actor_id: i64,
+    person_id: i64,
+    name: &str,
+    email: Option<&str>,
+    phone: Option<&str>,
+) -> ServiceResult<()> {
+    let (name, email, phone) = parse_new_person(name, email, phone)?;
+    let tx = write_tx(conn)?;
+    let changed = tx.execute(
+        "UPDATE people SET name = ?1, email = ?2, phone = ?3 WHERE id = ?4",
+        params![name, email, phone, person_id],
+    )?;
+    if changed == 0 {
+        return Err(ServiceError::NotFound("Pessoa não encontrada.".into()));
+    }
+    audit_events::record(&tx, actor_id, "person.updated", "person", person_id, None)?;
     tx.commit()?;
     Ok(())
 }
@@ -481,8 +615,8 @@ mod tests {
             &mut conn,
             actor,
             unit,
-            new_person("Test Owner"),
-            UnitRole::Owner,
+            new_person("Test Resident"),
+            UnitRole::Resident,
             d(2025, 1, 1),
         );
         end_relationship(&mut conn, actor, rel, d(2025, 2, 1), today()).unwrap();
@@ -499,7 +633,7 @@ mod tests {
         assert_eq!(count(&conn, "units"), 1);
         assert_eq!(
             audit_actions(&conn),
-            ["unit.created", "unit.owner_set", "unit.owner_ended"]
+            ["unit.created", "unit.resident_set", "unit.resident_ended"]
         );
 
         // Closing twice is a conflict.
@@ -512,7 +646,7 @@ mod tests {
             actor,
             unit,
             PersonRef::Existing(person_id),
-            UnitRole::Owner,
+            UnitRole::Resident,
             d(2025, 3, 1),
         );
         assert_eq!(count(&conn, "people"), 1);
@@ -520,7 +654,7 @@ mod tests {
     }
 
     #[test]
-    fn a_unit_has_one_owner_at_a_time_and_a_sale_is_end_then_set() {
+    fn a_unit_has_one_owner_at_a_time_and_a_sale_hands_it_over() {
         let (mut conn, actor) = setup();
         let unit = create_unit(&mut conn, actor, "1A", "1").unwrap();
         let first = assign_ok(
@@ -548,15 +682,15 @@ mod tests {
         assert_eq!(count(&conn, "occupancies"), 1);
         assert_eq!(count(&conn, "audit_events"), events);
 
-        end_relationship(&mut conn, actor, first, d(2025, 4, 30), today()).unwrap();
-        assign_ok(
+        replace_owner(
             &mut conn,
             actor,
-            unit,
-            new_person("Buyer"),
-            UnitRole::Owner,
+            first,
+            &new_person("Buyer"),
             d(2025, 5, 1),
-        );
+            today(),
+        )
+        .unwrap();
         let active_owners: i64 = conn
             .query_row(
                 "SELECT count(*) FROM occupancies
@@ -804,7 +938,7 @@ mod tests {
         let (mut conn, actor) = setup();
         let ten = create_unit(&mut conn, actor, "10A", "10").unwrap();
         let one = create_unit(&mut conn, actor, "1A", "1").unwrap();
-        let old = assign_ok(
+        assign_ok(
             &mut conn,
             actor,
             one,
@@ -820,7 +954,7 @@ mod tests {
             UnitRole::Owner,
             d(2025, 3, 1),
         );
-        assign_ok(
+        let ana = assign_ok(
             &mut conn,
             actor,
             ten,
@@ -828,21 +962,149 @@ mod tests {
             UnitRole::Resident,
             d(2025, 1, 1),
         );
-        end_relationship(&mut conn, actor, old, d(2025, 5, 1), today()).unwrap();
+        end_relationship(&mut conn, actor, ana, d(2025, 5, 1), today()).unwrap();
 
         let directory = list(&conn).unwrap();
         let labels: Vec<_> = directory.units.iter().map(|u| u.label.as_str()).collect();
         assert_eq!(labels, ["10A", "1A"]);
         let names: Vec<_> = directory.people.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Álvaro", "Ana", "Zé"]);
-        // Most recent activity first: Álvaro left 2025-05-01, then Zé (2025-03-01), then Ana.
+        // Most recent activity first: Ana left 2025-05-01, then Zé (2025-03-01), then Álvaro.
         let order: Vec<_> = directory
             .relationships
             .iter()
             .map(|r| r.name.as_str())
             .collect();
-        assert_eq!(order, ["Álvaro", "Zé", "Ana"]);
-        assert_eq!(directory.relationships[0].role, UnitRole::Owner);
+        assert_eq!(order, ["Ana", "Zé", "Álvaro"]);
+        assert_eq!(directory.relationships[0].role, UnitRole::Resident);
         assert_eq!(directory.relationships[0].end_date, Some(d(2025, 5, 1)));
+    }
+
+    #[test]
+    fn an_owner_cannot_leave_without_a_successor() {
+        let (mut conn, actor) = setup();
+        let unit = create_unit(&mut conn, actor, "1A", "1").unwrap();
+        let owner = assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Owner"),
+            UnitRole::Owner,
+            d(2024, 1, 1),
+        );
+        let events = count(&conn, "audit_events");
+        let bare = end_relationship(&mut conn, actor, owner, d(2025, 1, 1), today());
+        assert!(matches!(bare, Err(ServiceError::Rejected(_))), "{bare:?}");
+        assert_eq!(end_of(&conn, owner), None);
+        assert_eq!(count(&conn, "audit_events"), events);
+    }
+
+    #[test]
+    fn replacing_an_owner_is_atomic_and_validated() {
+        let (mut conn, actor) = setup();
+        let unit = create_unit(&mut conn, actor, "1A", "1").unwrap();
+        let owner = assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Seller"),
+            UnitRole::Owner,
+            d(2024, 1, 1),
+        );
+        let seller_id: i64 = conn
+            .query_row(
+                "SELECT person_id FROM occupancies WHERE id = ?1",
+                [owner],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let events = count(&conn, "audit_events");
+
+        // Rejected: same person, invalid new person, future or too-early date. Nothing changes.
+        for (next, date) in [
+            (PersonRef::Existing(seller_id), d(2025, 5, 1)),
+            (new_person("  "), d(2025, 5, 1)),
+            (new_person("Buyer"), d(2025, 6, 16)),
+            (new_person("Buyer"), d(2023, 1, 1)),
+            (PersonRef::Existing(999), d(2025, 5, 1)),
+        ] {
+            assert!(replace_owner(&mut conn, actor, owner, &next, date, today()).is_err());
+        }
+        assert_eq!(end_of(&conn, owner), None);
+        assert_eq!(
+            (count(&conn, "people"), count(&conn, "occupancies")),
+            (1, 1)
+        );
+        assert_eq!(count(&conn, "audit_events"), events);
+
+        let new_id = replace_owner(
+            &mut conn,
+            actor,
+            owner,
+            &new_person("Buyer"),
+            d(2025, 5, 1),
+            today(),
+        )
+        .unwrap();
+        assert_eq!(end_of(&conn, owner), Some(d(2025, 5, 1)));
+        assert_eq!(end_of(&conn, new_id), None);
+        assert_eq!(
+            audit_actions(&conn)[events as usize..],
+            ["unit.owner_ended", "unit.owner_set"]
+        );
+
+        // A resident relationship is not an ownership; an ended one cannot be replaced again.
+        let again = replace_owner(
+            &mut conn,
+            actor,
+            owner,
+            &new_person("X"),
+            d(2025, 6, 1),
+            today(),
+        );
+        assert!(matches!(again, Err(ServiceError::Conflict(_))));
+    }
+
+    #[test]
+    fn a_person_can_be_edited() {
+        let (mut conn, actor) = setup();
+        let unit = create_unit(&mut conn, actor, "1A", "1").unwrap();
+        let rel = assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Old Name"),
+            UnitRole::Owner,
+            d(2024, 1, 1),
+        );
+        let person: i64 = conn
+            .query_row(
+                "SELECT person_id FROM occupancies WHERE id = ?1",
+                [rel],
+                |r| r.get(0),
+            )
+            .unwrap();
+        update_person(
+            &mut conn,
+            actor,
+            person,
+            " New Name ",
+            Some("a@example.test"),
+            Some(""),
+        )
+        .unwrap();
+        let p = list(&conn).unwrap().people.remove(0);
+        assert_eq!(
+            (p.name.as_str(), p.email.as_deref(), p.phone.as_deref()),
+            ("New Name", Some("a@example.test"), None)
+        );
+        assert_eq!(audit_actions(&conn).last().unwrap(), "person.updated");
+
+        for bad in [("", None), ("Ok", Some("not-an-email"))] {
+            let r = update_person(&mut conn, actor, person, bad.0, bad.1, None);
+            assert!(r.is_err());
+        }
+        let missing = update_person(&mut conn, actor, 999, "Ok", None, None);
+        assert!(matches!(missing, Err(ServiceError::NotFound(_))));
     }
 }

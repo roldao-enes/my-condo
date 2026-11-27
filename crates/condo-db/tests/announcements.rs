@@ -66,15 +66,19 @@ fn snapshots_only_current_owners_that_have_an_email() {
         Some("leaver@example.test"),
         UnitRole::Owner,
     );
-    residency::end_relationship(&mut conn, actor, leaver, d(2025, 2, 1), d(2025, 6, 15)).unwrap();
-    place(
+    residency::replace_owner(
         &mut conn,
         actor,
-        a,
-        "Ana",
-        Some("ana@example.test"),
-        UnitRole::Owner,
-    );
+        leaver,
+        &PersonRef::New {
+            name: "Ana".into(),
+            email: Some("ana@example.test".into()),
+            phone: None,
+        },
+        d(2025, 2, 1),
+        d(2025, 6, 15),
+    )
+    .unwrap();
     // 1B: an owner without an email, and a tenant who has one. Tenants are not members of the
     // condominium, so they get nothing.
     place(&mut conn, actor, b, "No Email", None, UnitRole::Owner);
