@@ -29,7 +29,8 @@ pub enum BackupError {
 pub struct BackupInfo {
     pub schema_version: usize,
     pub units: i64,
-    pub residents: i64,
+    /// People (owners and residents). Older backups call this table `residents`.
+    pub people: i64,
     pub transactions: i64,
 }
 
@@ -99,7 +100,7 @@ pub fn validate(path: &Path) -> Result<BackupInfo, BackupError> {
     Ok(BackupInfo {
         schema_version: version,
         units: count("units")?,
-        residents: count("residents")?,
+        people: count(if version >= 3 { "people" } else { "residents" })?,
         transactions: count("finance_transactions")?,
     })
 }
@@ -177,7 +178,7 @@ mod tests {
         let conn = seeded(&dir.path().join("condo.db"), "1A");
         let target = dir.path().join("out").join("backup.db");
         let info = export(&conn, &target).unwrap();
-        assert_eq!((info.units, info.residents, info.transactions), (1, 0, 0));
+        assert_eq!((info.units, info.people, info.transactions), (1, 0, 0));
         assert_eq!(info.schema_version, SCHEMA_VERSION);
         assert_eq!(unit_labels(&target), ["1A"]);
         // No temp files left behind, and exporting again over the same file works.

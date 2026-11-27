@@ -121,18 +121,28 @@ component UnitCard inherits Rectangle {
         }
 
         HorizontalLayout {
-            spacing: 4px;
-            for initials in root.unit.avatars: Avatar {
-                initials: initials;
+            spacing: 8px;
+            if root.unit.owner != "": Avatar {
+                initials: root.unit.owner-initials;
                 size: 28px;
             }
-            Rectangle {
+            VerticalLayout {
                 horizontal-stretch: 1;
-            }
+                alignment: center;
+                Text {
+                    text: root.unit.owner != "" ? root.unit.owner : "Sem proprietário";
+                    font-size: 13px;
+                    font-weight: root.unit.owner != "" ? 600 : 400;
+                    color: root.unit.owner != "" ? Theme.text : Theme.muted;
+                    overflow: elide;
+                }
 
-            Badge {
-                text: root.unit.summary;
-                tone: root.unit.count > 0 ? "green" : "neutral";
+                Text {
+                    text: root.unit.resident != "" ? "Reside: " + root.unit.resident : "Sem residente indicado";
+                    font-size: 12px;
+                    color: Theme.muted;
+                    overflow: elide;
+                }
             }
         }
     }
@@ -165,11 +175,11 @@ export component OverviewPage inherits ScrollView {
 
             AppButton {
                 kind: "primary";
-                text: "Adicionar residente";
+                text: "Definir proprietário";
                 icon: Icons.user-plus;
                 enabled: Backend.total-units > 0;
                 clicked => {
-                    Backend.open-onboard(-1);
+                    Backend.open-onboard(-1, 0);
                 }
             }
         }
@@ -180,7 +190,7 @@ export component OverviewPage inherits ScrollView {
                 label: stat.label;
                 value: stat.value;
                 caption: stat.caption;
-                icon: stat.label == "Frações" ? Icons.building : stat.label == "Residentes ativos" ? Icons.users : Icons.door;
+                icon: stat.label == "Frações" ? Icons.building : stat.label == "Proprietários" ? Icons.users : Icons.door;
             }
         }
 
@@ -221,9 +231,9 @@ export component OverviewPage inherits ScrollView {
 
         SectionHeading {
             title: "Movimentos recentes";
-            link: "Ver residentes";
+            link: "Ver pessoas";
             link-clicked => {
-                Backend.navigate("residents");
+                Backend.navigate("people");
             }
         }
 
@@ -334,11 +344,11 @@ export component UnitsPage inherits VerticalLayout {
         }
 
         AppButton {
-            text: "Adicionar residente";
+            text: "Definir proprietário";
             icon: Icons.user-plus;
             enabled: Backend.total-units > 0;
             clicked => {
-                Backend.open-onboard(-1);
+                Backend.open-onboard(-1, 0);
             }
         }
     }
@@ -377,7 +387,7 @@ export component UnitsPage inherits VerticalLayout {
                 background: Theme.surface-alt;
                 Text {
                     x: 16px;
-                    width: parent.width * 0.26;
+                    width: parent.width * 0.24;
                     height: parent.height;
                     text: "Fração";
                     font-size: 13px;
@@ -387,8 +397,8 @@ export component UnitsPage inherits VerticalLayout {
                 }
 
                 Text {
-                    x: parent.width * 0.28;
-                    width: parent.width * 0.10;
+                    x: parent.width * 0.26;
+                    width: parent.width * 0.08;
                     height: parent.height;
                     text: "Piso";
                     font-size: 13px;
@@ -398,10 +408,10 @@ export component UnitsPage inherits VerticalLayout {
                 }
 
                 Text {
-                    x: parent.width * 0.40;
-                    width: parent.width * 0.32;
+                    x: parent.width * 0.36;
+                    width: parent.width * 0.27;
                     height: parent.height;
-                    text: "Residentes ativos";
+                    text: "Proprietário";
                     font-size: 13px;
                     font-weight: 600;
                     color: Theme.muted;
@@ -409,10 +419,10 @@ export component UnitsPage inherits VerticalLayout {
                 }
 
                 Text {
-                    x: parent.width * 0.74;
-                    width: parent.width * 0.16;
+                    x: parent.width * 0.65;
+                    width: parent.width * 0.27;
                     height: parent.height;
-                    text: "Estado";
+                    text: "Residente (informativo)";
                     font-size: 13px;
                     font-weight: 600;
                     color: Theme.muted;
@@ -438,7 +448,7 @@ export component UnitsPage inherits VerticalLayout {
 
                     Rectangle {
                         x: 16px;
-                        width: row.width * 0.26 - 16px;
+                        width: row.width * 0.24 - 16px;
                         HorizontalLayout {
                             spacing: 10px;
                             VerticalLayout {
@@ -472,8 +482,8 @@ export component UnitsPage inherits VerticalLayout {
                     }
 
                     Text {
-                        x: row.width * 0.28;
-                        width: row.width * 0.10;
+                        x: row.width * 0.26;
+                        width: row.width * 0.08;
                         height: parent.height;
                         text: unit.floor;
                         font-size: 14px;
@@ -482,29 +492,26 @@ export component UnitsPage inherits VerticalLayout {
                     }
 
                     Text {
-                        x: row.width * 0.40;
-                        width: row.width * 0.32;
+                        x: row.width * 0.36;
+                        width: row.width * 0.27;
                         height: parent.height;
-                        text: unit.people != "" ? unit.people : "Nenhum";
+                        text: unit.owner != "" ? unit.owner : "Sem proprietário";
                         font-size: 14px;
-                        color: unit.people != "" ? Theme.text : Theme.muted;
+                        font-weight: unit.owner != "" ? 600 : 400;
+                        color: unit.owner != "" ? Theme.text : Theme.muted;
                         vertical-alignment: center;
                         overflow: elide;
                     }
 
-                    Rectangle {
-                        x: row.width * 0.74;
-                        width: row.width * 0.16;
-                        VerticalLayout {
-                            alignment: center;
-                            HorizontalLayout {
-                                alignment: start;
-                                Badge {
-                                    text: unit.count > 0 ? "Ocupada" : "Sem residentes";
-                                    tone: unit.count > 0 ? "green" : "neutral";
-                                }
-                            }
-                        }
+                    Text {
+                        x: row.width * 0.65;
+                        width: row.width * 0.27;
+                        height: parent.height;
+                        text: unit.resident != "" ? unit.resident : "Não indicado";
+                        font-size: 14px;
+                        color: unit.resident != "" ? Theme.text : Theme.muted;
+                        vertical-alignment: center;
+                        overflow: elide;
                     }
 
                     Icon {
@@ -530,20 +537,29 @@ export component UnitsPage inherits VerticalLayout {
     }
 }
 
-// --- Residents -----------------------------------------------------------------------------
-export component ResidentsPage inherits VerticalLayout {
+// --- People --------------------------------------------------------------------------------
+export component PeoplePage inherits VerticalLayout {
     spacing: 16px;
     PageHeading {
         eyebrow: "GESTÃO DO CONDOMÍNIO";
         title: Backend.page-title;
         subtitle: Backend.page-subtitle;
         AppButton {
-            kind: "primary";
-            text: "Adicionar residente";
+            text: "Definir residente";
             icon: Icons.user-plus;
             enabled: Backend.total-units > 0;
             clicked => {
-                Backend.open-onboard(-1);
+                Backend.open-onboard(-1, 1);
+            }
+        }
+
+        AppButton {
+            kind: "primary";
+            text: "Definir proprietário";
+            icon: Icons.user-plus;
+            enabled: Backend.total-units > 0;
+            clicked => {
+                Backend.open-onboard(-1, 0);
             }
         }
     }
@@ -586,7 +602,7 @@ export component ResidentsPage inherits VerticalLayout {
                     x: 16px;
                     width: parent.width * 0.32;
                     height: parent.height;
-                    text: "Residente";
+                    text: "Pessoa";
                     font-size: 13px;
                     font-weight: 600;
                     color: Theme.muted;
@@ -768,7 +784,7 @@ export component UnitDialog inherits Modal {
 }
 
 export component OnboardDialog inherits Modal {
-    title: "Adicionar residente";
+    title: "Definir proprietário ou residente";
     card-width: 540px;
     property <bool> existing: false;
     // Held here (not in the fields) because the fields come and go with the toggle.
@@ -781,6 +797,7 @@ export component OnboardDialog inherits Modal {
     }
     init => {
         unit.current-index = Backend.preselect-unit-index >= 0 ? Backend.preselect-unit-index : 0;
+        role.current-index = Backend.preselect-role-index;
     }
     function submit() {
         Backend.onboard(unit.current-index, root.existing, root.person-index, root.name-text, root.email-text, root.phone-text, role.current-index, date.text);
@@ -791,7 +808,7 @@ export component OnboardDialog inherits Modal {
         model: Backend.unit-options;
     }
 
-    if Backend.resident-options.length > 1: Segmented {
+    if Backend.person-options.length > 1: Segmented {
         first: "Nova pessoa";
         second: "Pessoa existente";
         second-selected: root.existing;
@@ -800,8 +817,8 @@ export component OnboardDialog inherits Modal {
         }
     }
     if root.existing: SelectField {
-        label: "Residente";
-        model: Backend.resident-options;
+        label: "Pessoa";
+        model: Backend.person-options;
         current-index <=> root.person-index;
     }
     if !root.existing: TextField {
@@ -829,7 +846,7 @@ export component OnboardDialog inherits Modal {
     HorizontalLayout {
         spacing: 12px;
         role := SelectField {
-            label: "Relação";
+            label: "Função na fração";
             model: Backend.role-options;
             // No "choose one" prompt here: Proprietário is a real default.
             placeholder-first: false;
@@ -849,11 +866,18 @@ export component OnboardDialog inherits Modal {
         }
     }
 
+    Text {
+        text: role.current-index == 0 ? "O proprietário é membro do condomínio: responde pelas quotas e recebe os comunicados. Se a fração já tem proprietário, registe primeiro a saída dele." : "O residente é só indicativo (por exemplo, um arrendatário): não tem quotas nem recebe comunicados. Substitui o residente atual, se houver.";
+        font-size: 13px;
+        color: Theme.muted;
+        wrap: word-wrap;
+    }
+
     if Backend.form-error != "": InlineError {
         text: Backend.form-error;
     }
     FormActions {
-        submit-text: "Adicionar residente";
+        submit-text: role.current-index == 0 ? "Definir proprietário" : "Definir residente";
         submit => {
             root.submit();
         }
@@ -957,14 +981,14 @@ export component DetailDialog inherits Modal {
     }
 
     Text {
-        text: "Residentes e histórico";
+        text: "Proprietário, residente e histórico";
         font-size: 16px;
         font-weight: 600;
         color: Theme.text;
     }
 
     if Backend.detail-rows.length == 0: Text {
-        text: "Sem residentes registados.";
+        text: "Sem proprietário nem residente registados.";
         font-size: 14px;
         color: Theme.muted;
     }
@@ -1020,12 +1044,21 @@ export component DetailDialog inherits Modal {
     }
     HorizontalLayout {
         alignment: end;
+        spacing: 10px;
         AppButton {
-            kind: "primary";
-            text: "Adicionar residente";
+            text: "Definir residente";
             icon: Icons.user-plus;
             clicked => {
-                Backend.open-onboard(Backend.detail-unit-id);
+                Backend.open-onboard(Backend.detail-unit-id, 1);
+            }
+        }
+
+        AppButton {
+            kind: "primary";
+            text: "Definir proprietário";
+            icon: Icons.user-plus;
+            clicked => {
+                Backend.open-onboard(Backend.detail-unit-id, 0);
             }
         }
     }

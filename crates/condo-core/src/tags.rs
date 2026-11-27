@@ -12,7 +12,10 @@ pub enum MatchType {
 pub enum TagCategory {
     Recurring,
     Extraordinary,
-    ResidentPayment,
+    /// A payment made by (or on behalf of) a unit's owner. Stored as `resident_payment`, the
+    /// name it had before owners and residents were told apart; renaming a stored value would
+    /// rewrite every user's tags for no benefit.
+    OwnerPayment,
 }
 
 impl MatchType {
@@ -37,7 +40,7 @@ impl TagCategory {
         match self {
             Self::Recurring => "recurring",
             Self::Extraordinary => "extraordinary",
-            Self::ResidentPayment => "resident_payment",
+            Self::OwnerPayment => "resident_payment",
         }
     }
 
@@ -45,15 +48,15 @@ impl TagCategory {
         match value {
             "recurring" => Some(Self::Recurring),
             "extraordinary" => Some(Self::Extraordinary),
-            "resident_payment" => Some(Self::ResidentPayment),
+            "resident_payment" => Some(Self::OwnerPayment),
             _ => None,
         }
     }
 
-    /// Resident payments are credits; expense categories are debits.
+    /// Owner payments are credits; expense categories are debits.
     pub fn direction(self) -> &'static str {
         match self {
-            Self::ResidentPayment => "credit",
+            Self::OwnerPayment => "credit",
             _ => "debit",
         }
     }
@@ -63,7 +66,7 @@ impl TagCategory {
         match self {
             Self::Recurring => "Recorrente",
             Self::Extraordinary => "Extraordinária",
-            Self::ResidentPayment => "Pagamento de residente",
+            Self::OwnerPayment => "Pagamento de proprietário",
         }
     }
 }
@@ -76,7 +79,7 @@ pub struct FinanceTag {
     pub pattern: String,
     pub match_type: MatchType,
     pub category: TagCategory,
-    pub resident_id: Option<i64>,
+    pub owner_id: Option<i64>,
     pub unit_id: Option<i64>,
 }
 
@@ -106,7 +109,7 @@ pub fn match_tag<'a>(
     let mut matches: Vec<&FinanceTag> = tags
         .iter()
         .filter(|tag| {
-            let direction_ok = if tag.category == TagCategory::ResidentPayment {
+            let direction_ok = if tag.category == TagCategory::OwnerPayment {
                 amount > 0
             } else {
                 amount < 0
@@ -157,7 +160,7 @@ mod tests {
             pattern: "MARINA SEQUEIRA".into(),
             match_type: MatchType::Contains,
             category: TagCategory::Recurring,
-            resident_id: None,
+            owner_id: None,
             unit_id: None,
         }
     }
@@ -208,13 +211,13 @@ mod tests {
         assert!(match_tag("Marina Sequeira Maria Oliveira", -7500, &[tag(), other]).is_none());
 
         let payer = FinanceTag {
-            category: TagCategory::ResidentPayment,
-            resident_id: Some(1),
+            category: TagCategory::OwnerPayment,
+            owner_id: Some(1),
             unit_id: Some(1),
             ..tag()
         };
         assert_eq!(
-            match_tag("Marina Sequeira", 10_000, &[payer]).and_then(|t| t.resident_id),
+            match_tag("Marina Sequeira", 10_000, &[payer]).and_then(|t| t.owner_id),
             Some(1)
         );
     }

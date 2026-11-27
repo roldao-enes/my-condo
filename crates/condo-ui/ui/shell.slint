@@ -97,10 +97,10 @@ export component Shell inherits Rectangle {
 
                 NavItem {
                     icon: Icons.users;
-                    text: "Residentes";
-                    active: Backend.page == "residents";
+                    text: "Pessoas";
+                    active: Backend.page == "people";
                     clicked => {
-                        Backend.navigate("residents");
+                        Backend.navigate("people");
                     }
                 }
 

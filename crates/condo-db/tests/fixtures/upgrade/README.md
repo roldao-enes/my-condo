@@ -22,6 +22,16 @@ F=tests/fixtures/upgrade
   echo "PRAGMA user_version = N;"; } | sqlite3 $F/vN.db
 ```
 
+**When a migration renames a table or column, or changes a stored value**, `seed.sql` (written for
+schema v1) no longer applies after it. Build that fixture in two steps instead: apply the
+migrations before it, `seed.sql` and the earlier `seed_v<N>.sql`; then apply the renaming migration
+and `seed_vN.sql`, which is written with the new names (this is how `v3.db` was made). Also declare
+the change in `RENAMES` in `src/upgrade_tests.rs` (renamed tables and columns, changed values, and
+tables a migration appends rows to) so the old fixtures can still be compared with the upgraded
+data. That list is the only way the data comparison is relaxed; nothing else may change. Use
+`PRAGMA foreign_keys = ON;` first, because the `sqlite3` shell of some systems defaults to the
+legacy `ALTER TABLE` behaviour.
+
 Ideally build the new fixture from the **released** app (run the previous release, enter data,
 copy `condo.db`) rather than from the migrations, so it also covers what the migrations did not
 anticipate.

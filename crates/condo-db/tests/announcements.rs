@@ -1,9 +1,9 @@
 //! Ported from tests/functional/announcements.spec.ts.
 
 use chrono::NaiveDate;
-use condo_core::occupancy::ResidentRole;
+use condo_core::occupancy::UnitRole;
 use condo_db::announcements;
-use condo_db::residency::{self, Onboarding, ResidentRef};
+use condo_db::residency::{self, PersonRef, Placement};
 use condo_db::rusqlite::Connection;
 use condo_db::{open_in_memory, users, ServiceError};
 
@@ -19,20 +19,20 @@ fn setup() -> (Connection, i64, i64, i64) {
     (conn, actor, a, b)
 }
 
-fn onboard(
+fn place(
     conn: &mut Connection,
     actor: i64,
     unit: i64,
     name: &str,
     email: Option<&str>,
-    role: ResidentRole,
+    role: UnitRole,
 ) -> i64 {
-    residency::onboard(
+    residency::assign(
         conn,
         actor,
-        &Onboarding {
+        &Placement {
             unit_id: unit,
-            resident: ResidentRef::New {
+            person: PersonRef::New {
                 name: name.into(),
                 email: email.map(Into::into),
                 phone: None,
@@ -55,26 +55,37 @@ fn jobs(conn: &Connection, announcement: i64) -> Vec<(String, String, String)> {
 }
 
 #[test]
-fn snapshots_only_active_residents_that_have_an_email() {
+fn snapshots_only_current_owners_that_have_an_email() {
     let (mut conn, actor, a, b) = setup();
-    onboard(
+    // 1A: a former owner left, the current one is Ana.
+    let leaver = place(
+        &mut conn,
+        actor,
+        a,
+        "Leaver",
+        Some("leaver@example.test"),
+        UnitRole::Owner,
+    );
+    residency::end_relationship(&mut conn, actor, leaver, d(2025, 2, 1), d(2025, 6, 15)).unwrap();
+    place(
         &mut conn,
         actor,
         a,
         "Ana",
         Some("ana@example.test"),
-        ResidentRole::Owner,
+        UnitRole::Owner,
     );
-    onboard(&mut conn, actor, b, "No Email", None, ResidentRole::Owner);
-    let leaver = onboard(
+    // 1B: an owner without an email, and a tenant who has one. Tenants are not members of the
+    // condominium, so they get nothing.
+    place(&mut conn, actor, b, "No Email", None, UnitRole::Owner);
+    place(
         &mut conn,
         actor,
         b,
-        "Leaver",
-        Some("leaver@example.test"),
-        ResidentRole::Tenant,
+        "Tenant",
+        Some("tenant@example.test"),
+        UnitRole::Resident,
     );
-    residency::offboard(&mut conn, actor, leaver, d(2025, 2, 1), d(2025, 6, 15)).unwrap();
 
     let id = announcements::create_draft(&mut conn, actor, " Hello ", " World ").unwrap();
     assert_eq!(announcements::queue(&mut conn, actor, id, None).unwrap(), 1);
@@ -104,21 +115,21 @@ fn snapshots_only_active_residents_that_have_an_email() {
 #[test]
 fn can_be_limited_to_one_unit_and_cannot_be_queued_twice() {
     let (mut conn, actor, a, b) = setup();
-    onboard(
+    place(
         &mut conn,
         actor,
         a,
         "a@example.test",
         Some("a@example.test"),
-        ResidentRole::Owner,
+        UnitRole::Owner,
     );
-    onboard(
+    place(
         &mut conn,
         actor,
         b,
         "b@example.test",
         Some("b@example.test"),
-        ResidentRole::Owner,
+        UnitRole::Owner,
     );
 
     let id = announcements::create_draft(&mut conn, actor, "Unit only", "Body").unwrap();
@@ -155,13 +166,13 @@ fn refuses_to_queue_when_nobody_can_be_reached() {
 #[test]
 fn unknown_announcements_and_units_are_not_found_and_leave_nothing_behind() {
     let (mut conn, actor, a, _) = setup();
-    onboard(
+    place(
         &mut conn,
         actor,
         a,
         "Ana",
         Some("ana@example.test"),
-        ResidentRole::Owner,
+        UnitRole::Owner,
     );
     assert!(matches!(
         announcements::queue(&mut conn, actor, 999, None),
@@ -186,21 +197,21 @@ fn unknown_announcements_and_units_are_not_found_and_leave_nothing_behind() {
 #[test]
 fn a_shared_address_is_one_recipient_with_merged_units_and_drafts_are_validated() {
     let (mut conn, actor, a, b) = setup();
-    onboard(
+    place(
         &mut conn,
         actor,
         a,
         "Ana",
         Some("ana@example.test"),
-        ResidentRole::Owner,
+        UnitRole::Owner,
     );
-    onboard(
+    place(
         &mut conn,
         actor,
         b,
         "Ana B",
         Some("Ana@Example.test"),
-        ResidentRole::Owner,
+        UnitRole::Owner,
     );
     let id = announcements::create_draft(&mut conn, actor, "Hi", "Body").unwrap();
     assert_eq!(announcements::queue(&mut conn, actor, id, None).unwrap(), 1);
@@ -230,13 +241,13 @@ fn a_shared_address_is_one_recipient_with_merged_units_and_drafts_are_validated(
 #[test]
 fn list_counts_delivery_states_newest_first() {
     let (mut conn, actor, a, _) = setup();
-    onboard(
+    place(
         &mut conn,
         actor,
         a,
         "Ana",
         Some("ana@example.test"),
-        ResidentRole::Owner,
+        UnitRole::Owner,
     );
     let first = announcements::create_draft(&mut conn, actor, "First", "Body").unwrap();
     let second = announcements::create_draft(&mut conn, actor, "Second", "Body").unwrap();

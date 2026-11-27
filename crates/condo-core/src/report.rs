@@ -226,8 +226,8 @@ fn build_report(
         collate_pt(&a.name, &b.name).then_with(|| collate_pt(&a.unit_label, &b.unit_label))
     });
     let debt_table = table(
-        "Saldos por residente",
-        &["Residente", "Fração", "Por liquidar", "Vencido"],
+        "Saldos por proprietário",
+        &["Proprietário", "Fração", "Por liquidar", "Vencido"],
         accounts
             .into_iter()
             .map(|a| vec![a.name, a.unit_label, money(a.outstanding), money(a.overdue)])
@@ -421,7 +421,7 @@ mod tests {
     fn charges() -> Vec<Charge> {
         let first = Charge {
             id: 1,
-            resident_id: 1,
+            owner_id: 1,
             unit_id: 1,
             name: "Owner <script>alert(1)</script>".into(),
             unit_label: "1A & 1B".into(),
@@ -507,7 +507,7 @@ mod tests {
         assert!(clipboard.html.contains("Lift &amp; &quot;repairs&quot;"));
         assert!(clipboard
             .text
-            .contains("Residente\tFração\tPor liquidar\tVencido"));
+            .contains("Proprietário\tFração\tPor liquidar\tVencido"));
         assert!(clipboard.text.contains("01/02/2025"));
         assert!(clipboard.text.contains("03/01/2025"));
     }

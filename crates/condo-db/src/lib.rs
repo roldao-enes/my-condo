@@ -29,6 +29,7 @@ pub use rusqlite;
 const MIGRATIONS: &[&str] = &[
     include_str!("../migrations/0001_initial.sql"),
     include_str!("../migrations/0002_app_settings.sql"),
+    include_str!("../migrations/0003_owner_and_resident.sql"),
 ];
 
 /// The schema version this build creates and understands.
@@ -288,7 +289,7 @@ mod tests {
         assert_eq!(fk, 1);
         let err = conn
             .execute(
-                "INSERT INTO occupancies (unit_id, resident_id, role, start_date)
+                "INSERT INTO occupancies (unit_id, person_id, role, start_date)
                  VALUES (99, 99, 'owner', '2025-01-01')",
                 [],
             )
@@ -314,29 +315,30 @@ mod tests {
         conn.execute_batch(
             "INSERT INTO users (email, password) VALUES ('a@b.c', 'x');
              INSERT INTO units (label, floor) VALUES ('1A', '1');
-             INSERT INTO residents (name) VALUES ('Ana');",
+             INSERT INTO people (name) VALUES ('Ana');",
         )
         .unwrap();
         let fails = |sql: &str| conn.execute(sql, []).is_err();
-        // end_date before start_date, impossible calendar date, unknown role
-        assert!(fails("INSERT INTO occupancies (unit_id,resident_id,role,start_date,end_date) VALUES (1,1,'owner','2025-02-01','2025-01-01')"));
-        assert!(fails("INSERT INTO occupancies (unit_id,resident_id,role,start_date) VALUES (1,1,'owner','2025-02-30')"));
-        assert!(fails("INSERT INTO occupancies (unit_id,resident_id,role,start_date) VALUES (1,1,'landlord','2025-01-01')"));
-        // zero-amount movement; resident link on an expense
+        // end_date before start_date, impossible calendar date, a role from before owners and
+        // residents were told apart
+        assert!(fails("INSERT INTO occupancies (unit_id,person_id,role,start_date,end_date) VALUES (1,1,'owner','2025-02-01','2025-01-01')"));
+        assert!(fails("INSERT INTO occupancies (unit_id,person_id,role,start_date) VALUES (1,1,'owner','2025-02-30')"));
+        assert!(fails("INSERT INTO occupancies (unit_id,person_id,role,start_date) VALUES (1,1,'tenant','2025-01-01')"));
+        // zero-amount movement; owner link on an expense
         let tx = "INSERT INTO finance_transactions (fingerprint,date,value_date,description,amount,balance,imported_by";
         let fp = "'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'";
         assert!(fails(&format!(
             "{tx}) VALUES ({fp},'2025-01-01','2025-01-01','Fee',0,1,1)"
         )));
         assert!(fails(&format!(
-            "{tx},resident_id,unit_id) VALUES ({fp},'2025-01-01','2025-01-01','Fee',-5,1,1,1,1)"
+            "{tx},owner_id,unit_id) VALUES ({fp},'2025-01-01','2025-01-01','Fee',-5,1,1,1,1)"
         )));
         assert!(conn
-            .execute(&format!("{tx},resident_id,unit_id) VALUES ({fp},'2025-01-01','2025-01-01','Pay',5,1,1,1,1)"), [])
+            .execute(&format!("{tx},owner_id,unit_id) VALUES ({fp},'2025-01-01','2025-01-01','Pay',5,1,1,1,1)"), [])
             .is_ok());
         // tag category/direction/link combination
         assert!(fails("INSERT INTO finance_tags (name,pattern,match_type,direction,category,created_by) VALUES ('t','P','exact','credit','resident_payment',1)"));
-        assert!(fails("INSERT INTO finance_tags (name,pattern,match_type,direction,category,resident_id,unit_id,created_by) VALUES ('t','P','exact','debit','recurring',1,1,1)"));
+        assert!(fails("INSERT INTO finance_tags (name,pattern,match_type,direction,category,owner_id,unit_id,created_by) VALUES ('t','P','exact','debit','recurring',1,1,1)"));
         assert!(conn
             .execute("INSERT INTO finance_tags (name,pattern,match_type,direction,category,created_by) VALUES ('t','P','exact','debit','recurring',1)", [])
             .is_ok());

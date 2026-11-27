@@ -4,7 +4,7 @@
 //! person can read, diff and keep in a folder:
 //!
 //! ```text
-//! condo-base.json    users, settings, units, residents, occupancies, finance tags
+//! condo-base.json    users, settings, units, people, occupancies, finance tags
 //! condo-2024.json    that year's movements, charges, payments, announcements (with their email
 //!                    jobs and attempts) and audit events
 //! condo-2025.json    ...
@@ -39,7 +39,10 @@ use crate::backup::{self, BackupError};
 /// The `format` field of every file.
 pub const FORMAT: &str = "my-condo-export";
 /// Bumped when the layout of the files changes in a way an older app could not read.
-pub const FORMAT_VERSION: u32 = 1;
+///
+/// * 2: `residents` became `people`, and owners and residents are told apart (schema 3). Files
+///   of format 1 (schema 1 or 2) are still read; see [`upgrade_legacy`].
+pub const FORMAT_VERSION: u32 = 2;
 /// File name of the file with everything that does not belong to a year.
 pub const BASE_FILE: &str = "condo-base.json";
 
@@ -53,7 +56,7 @@ const BASE_TABLES: [&str; 6] = [
     "users",
     "app_settings",
     "units",
-    "residents",
+    "people",
     "occupancies",
     "finance_tags",
 ];
@@ -372,7 +375,7 @@ pub struct ImportSummary {
     pub years: Vec<i32>,
     pub users: usize,
     pub units: usize,
-    pub residents: usize,
+    pub people: usize,
     pub transactions: usize,
 }
 
@@ -402,13 +405,14 @@ pub fn load(paths: &[PathBuf]) -> Result<ImportPlan, PortableError> {
             .map_or_else(String::new, |n| n.to_string_lossy().into_owned());
         let not_an_export = || PortableError::NotAnExport(name.clone());
         let bytes = fs::read(path)?;
-        let envelope: Envelope = serde_json::from_slice(&bytes).map_err(|_| not_an_export())?;
+        let mut envelope: Envelope = serde_json::from_slice(&bytes).map_err(|_| not_an_export())?;
         if envelope.format != FORMAT {
             return Err(not_an_export());
         }
         if envelope.version > FORMAT_VERSION || envelope.schema_version > SCHEMA_VERSION {
             return Err(PortableError::TooNew);
         }
+        upgrade_legacy(&mut envelope);
         let allowed: Vec<&str> = match envelope.kind {
             Kind::Base => BASE_TABLES.to_vec(),
             Kind::Year => YEAR_TABLES.iter().map(|t| t.name).collect(),
@@ -443,7 +447,7 @@ pub fn load(paths: &[PathBuf]) -> Result<ImportPlan, PortableError> {
         years: years.keys().copied().collect(),
         users: base.rows("users").len(),
         units: base.rows("units").len(),
-        residents: base.rows("residents").len(),
+        people: base.rows("people").len(),
         transactions: years
             .values()
             .map(|y| y.rows("finance_transactions").len())
@@ -534,12 +538,67 @@ fn insert_row(
     Ok(())
 }
 
+/// Brings a file written before owners and residents were told apart (schema 3) to the current
+/// layout: `residents` is `people`, the account holder of a charge, movement or payment tag is
+/// `owner_id`, and the roles `tenant` and `occupant` are `resident`.
+///
+/// Rows are renamed, not reinterpreted: unlike upgrading a database, which moves finance rows to
+/// whoever owned the unit at the time, an old file is loaded as it was written.
+fn upgrade_legacy(envelope: &mut Envelope) {
+    if envelope.schema_version >= 3 {
+        return;
+    }
+    const COLUMNS: [(&str, &str, &str); 5] = [
+        ("occupancies", "resident_id", "person_id"),
+        ("email_jobs", "resident_id", "person_id"),
+        ("finance_tags", "resident_id", "owner_id"),
+        ("finance_transactions", "resident_id", "owner_id"),
+        ("finance_charges", "resident_id", "owner_id"),
+    ];
+    if let Some(rows) = envelope.tables.remove("residents") {
+        envelope.tables.insert("people".to_owned(), rows);
+    }
+    if let Some(seq) = envelope.sequences.remove("residents") {
+        envelope.sequences.insert("people".to_owned(), seq);
+    }
+    for (table, old, new) in COLUMNS {
+        for row in envelope.tables.get_mut(table).into_iter().flatten() {
+            if let Some(value) = row.remove(old) {
+                row.insert(new.to_owned(), value);
+            }
+        }
+    }
+    for row in envelope.tables.get_mut("occupancies").into_iter().flatten() {
+        if matches!(
+            row.get("role").and_then(Value::as_str),
+            Some("tenant" | "occupant")
+        ) {
+            row.insert("role".to_owned(), Value::String("resident".to_owned()));
+        }
+    }
+    envelope.schema_version = 3;
+}
+
+/// The triggers that keep one active owner and one active resident per unit. They guard new
+/// writes only, and an import restores data that may predate the rule (co-owners kept by the
+/// upgrade), so they are taken off while loading and put back, unchanged, afterwards.
+const ROLE_TRIGGERS: &str = "SELECT name, sql FROM sqlite_master
+                              WHERE type = 'trigger' AND name LIKE 'occupancies_one_active_%'";
+
 /// Deletes everything and loads the plan, in one transaction.
 fn replace_everything(conn: &mut Connection, plan: &ImportPlan) -> Result<(), PortableError> {
     let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
     // References between rows are checked once, at the end, so the load order does not matter
     // between files (a payment can point at a charge of another year).
     tx.pragma_update(None, "defer_foreign_keys", true)?;
+
+    let triggers: Vec<(String, String)> = tx
+        .prepare(ROLE_TRIGGERS)?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    for (name, _) in &triggers {
+        tx.execute(&format!("DROP TRIGGER \"{name}\""), [])?;
+    }
 
     let tables = all_tables();
     for table in tables.iter().rev() {
@@ -585,6 +644,10 @@ fn replace_everything(conn: &mut Connection, plan: &ImportPlan) -> Result<(), Po
         }
     }
 
+    for (_, sql) in &triggers {
+        tx.execute_batch(sql)?;
+    }
+
     let broken: Option<String> = tx
         .query_row("PRAGMA foreign_key_check", [], |row| row.get(0))
         .optional()?;
@@ -618,24 +681,24 @@ mod tests {
                ('smtp.host', 'smtp.example.test'), ('smtp.password', 's3cret');
              INSERT INTO units (id, label, floor) VALUES (1, '1A', '1'), (2, '1B', '1'), (3, '2A', '2');
              DELETE FROM units WHERE id = 3;
-             INSERT INTO residents (id, name, email) VALUES
+             INSERT INTO people (id, name, email) VALUES
                (1, 'Rita', 'rita@example.test'), (2, 'Sam', NULL);
-             INSERT INTO occupancies (unit_id, resident_id, role, start_date, end_date) VALUES
-               (1, 1, 'owner', '2020-01-01', NULL), (2, 2, 'tenant', '2021-01-01', '2024-12-31');
-             INSERT INTO finance_tags (id, name, pattern, match_type, direction, category, resident_id, unit_id, created_by) VALUES
+             INSERT INTO occupancies (unit_id, person_id, role, start_date, end_date) VALUES
+               (1, 1, 'owner', '2020-01-01', NULL), (2, 2, 'resident', '2021-01-01', '2024-12-31');
+             INSERT INTO finance_tags (id, name, pattern, match_type, direction, category, owner_id, unit_id, created_by) VALUES
                (1, 'Limpeza', 'CLEAN', 'contains', 'debit', 'recurring', NULL, NULL, 1),
                (2, 'Rita', 'RITA', 'exact', 'credit', 'resident_payment', 1, 1, 1);
-             INSERT INTO finance_transactions (id, fingerprint, date, value_date, description, amount, balance, category, imported_by, tag_id, resident_id, unit_id) VALUES
+             INSERT INTO finance_transactions (id, fingerprint, date, value_date, description, amount, balance, category, imported_by, tag_id, owner_id, unit_id) VALUES
                (1, '{a}', '2024-12-30', '2024-12-30', 'CLEAN DEC', -5000, 95000, 'recurring', 1, 1, NULL, NULL),
                (2, '{b}', '2025-01-05', '2025-01-05', 'RITA', 12000, 107000, 'unclassified', 1, 2, 1, 1);
-             INSERT INTO finance_charges (id, resident_id, unit_id, description, due_date, amount, created_by) VALUES
+             INSERT INTO finance_charges (id, owner_id, unit_id, description, due_date, amount, created_by) VALUES
                (1, 1, 1, 'Quota 2024-12', '2024-12-31', 12000, 1),
                (2, 1, 1, 'Quota 2025-01', '2025-01-31', 12000, 1);
              INSERT INTO finance_payments (id, transaction_id, charge_id, amount) VALUES (1, 2, 1, 12000);
              INSERT INTO announcements (id, subject, body, status, created_by, created_at, queued_at) VALUES
                (1, 'Obras', 'Texto', 'queued', 1, '2024-11-01T10:00:00.000Z', '2024-11-01T10:05:00.000Z'),
                (2, 'Reunião', 'Texto', 'draft', 1, '2025-03-01T10:00:00.000Z', NULL);
-             INSERT INTO email_jobs (id, announcement_id, resident_id, recipient_name, recipient_email, unit_labels, status, attempts, sent_at) VALUES
+             INSERT INTO email_jobs (id, announcement_id, person_id, recipient_name, recipient_email, unit_labels, status, attempts, sent_at) VALUES
                (1, 1, 1, 'Rita', 'rita@example.test', '1A', 'sent', 1, '2024-11-01T10:06:00.000Z');
              INSERT INTO email_attempts (id, email_job_id, attempted_at, outcome, error) VALUES
                (1, 1, '2024-11-01T10:06:00.000Z', 'ok', NULL);
@@ -834,7 +897,7 @@ mod tests {
                 years: vec![2024, 2025],
                 users: 2,
                 units: 2,
-                residents: 2,
+                people: 2,
                 transactions: 2,
             }
         );
@@ -1146,6 +1209,116 @@ mod tests {
         assert!(load(&[file(&summary, "condo-2024.json")]).is_err());
         assert_eq!(dump(&target), before);
         assert!(!dir.path().join("backups").exists());
+    }
+
+    #[test]
+    fn files_written_before_owners_and_residents_were_told_apart_still_import() {
+        let dir = tempfile::tempdir().unwrap();
+        let (_source, summary) = export_populated(dir.path());
+        // Turn the files back into what the previous release wrote.
+        for path in &summary.files {
+            let mut json: Value = serde_json::from_slice(&fs::read(path).unwrap()).unwrap();
+            json["version"] = 1.into();
+            json["schema_version"] = 2.into();
+            if let Some(seq) = json.get_mut("sequences").and_then(Value::as_object_mut) {
+                if let Some(v) = seq.remove("people") {
+                    seq.insert("residents".into(), v);
+                }
+            }
+            let tables = json["tables"].as_object_mut().unwrap();
+            if let Some(rows) = tables.remove("people") {
+                tables.insert("residents".into(), rows);
+            }
+            for (table, new, old) in [
+                ("occupancies", "person_id", "resident_id"),
+                ("email_jobs", "person_id", "resident_id"),
+                ("finance_tags", "owner_id", "resident_id"),
+                ("finance_transactions", "owner_id", "resident_id"),
+                ("finance_charges", "owner_id", "resident_id"),
+            ] {
+                let rows = tables.get_mut(table).and_then(Value::as_array_mut);
+                for row in rows.into_iter().flatten() {
+                    let row = row.as_object_mut().unwrap();
+                    let value = row.remove(new).unwrap();
+                    row.insert(old.into(), value);
+                }
+            }
+            let rows = tables.get_mut("occupancies").and_then(Value::as_array_mut);
+            for row in rows.into_iter().flatten() {
+                if row["role"] == "resident" {
+                    row["role"] = "tenant".into();
+                }
+            }
+            fs::write(path, serde_json::to_vec(&json).unwrap()).unwrap();
+        }
+
+        let plan = load(&summary.files).unwrap();
+        assert_eq!(plan.summary.people, 2);
+        let mut target = open(&dir.path().join("target.db")).unwrap();
+        target
+            .execute(
+                "INSERT INTO users (email, password) VALUES ('x@example.test', 'x')",
+                [],
+            )
+            .unwrap();
+        apply(&mut target, &plan, &dir.path().join("backups"), now()).unwrap();
+
+        let roles: Vec<String> = target
+            .prepare("SELECT role FROM occupancies ORDER BY id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<Result<_, _>>()
+            .unwrap();
+        assert_eq!(roles, ["owner", "resident"]);
+        let (people, holder): (i64, i64) = target
+            .query_row(
+                "SELECT (SELECT count(*) FROM people), (SELECT owner_id FROM finance_charges WHERE id = 1)",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((people, holder), (2, 1));
+    }
+
+    #[test]
+    fn co_owners_kept_by_an_upgrade_survive_an_export_and_import_and_the_rule_is_restored() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = populated(&dir.path().join("source.db"));
+        // What an upgraded database can hold: two active owners of one unit (the triggers only
+        // guard new writes, so they are lifted here to reproduce that state).
+        source
+            .execute_batch(
+                "DROP TRIGGER occupancies_one_active_owner;
+                 INSERT INTO occupancies (unit_id, person_id, role, start_date) VALUES (1, 2, 'owner', '2022-01-01');",
+            )
+            .unwrap();
+        let summary = export_to_dir(&source, &dir.path().join("out"), now()).unwrap();
+
+        let plan = load(&summary.files).unwrap();
+        let mut target = open(&dir.path().join("target.db")).unwrap();
+        target
+            .execute(
+                "INSERT INTO users (email, password) VALUES ('x@example.test', 'x')",
+                [],
+            )
+            .unwrap();
+        apply(&mut target, &plan, &dir.path().join("backups"), now()).unwrap();
+
+        let active_owners: i64 = target
+            .query_row(
+                "SELECT count(*) FROM occupancies WHERE unit_id = 1 AND role = 'owner' AND end_date IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(active_owners, 2);
+        // The rule guards new writes again.
+        let third = target.execute(
+            "INSERT INTO occupancies (unit_id, person_id, role, start_date) VALUES (1, 1, 'owner', '2025-01-01')",
+            [],
+        );
+        assert!(third.is_err());
     }
 
     #[test]

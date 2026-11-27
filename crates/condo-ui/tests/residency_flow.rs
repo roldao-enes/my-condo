@@ -3,7 +3,8 @@ mod common;
 use common::{add_unit, rows, setup_admin, Harness, PASSWORD};
 use slint::Model;
 
-/// Adds a person the way the "Adicionar residente" dialog submits it.
+/// Places a person the way the "Definir proprietário / residente" dialog submits it:
+/// `role` 0 is the owner, 1 the resident.
 fn onboard(h: &Harness, unit_index: i32, name: &str, email: &str, role: i32, date: &str) {
     h.backend().invoke_onboard(
         unit_index,
@@ -29,8 +30,8 @@ fn building_up_a_condominium_end_to_end() {
     let h = Harness::fresh();
     setup_admin(&h);
 
-    // With no units, adding a resident is not possible (the button is disabled).
-    h.click("Adicionar residente");
+    // With no units, there is nobody to place (the button is disabled).
+    h.click("Definir proprietário");
     assert_eq!(h.dialog(), "");
 
     // --- Units, through the real dialog ---------------------------------------------------------
@@ -72,10 +73,15 @@ fn building_up_a_condominium_end_to_end() {
     add_unit(&h, "2.o Dir.", "2");
     assert_eq!(h.backend().get_total_units(), 3);
 
-    // --- Residents ------------------------------------------------------------------------------
+    // --- Owners and residents -------------------------------------------------------------------
     // The picker lists a "select" placeholder first, then units in Portuguese order.
-    h.backend().invoke_open_onboard(-1);
+    h.backend().invoke_open_onboard(-1, 0);
     assert_eq!(h.dialog(), "onboard");
+    assert_eq!(
+        h.backend().get_preselect_role_index(),
+        0,
+        "the owner comes first"
+    );
     let units = common::strings(h.backend().get_unit_options());
     assert_eq!(
         units,
@@ -102,11 +108,24 @@ fn building_up_a_condominium_end_to_end() {
     assert_eq!(h.dialog(), "onboard");
     h.backend().invoke_close_dialog();
 
+    // 1.o Esq.: Maria owns it; Álvaro lives there (say, as her tenant).
     onboard(&h, 1, "Maria Silva", "maria@example.test", 0, "01/01/2025");
-    assert_eq!(h.notice(), "Residente associado à fração.");
+    assert_eq!(h.notice(), "Proprietário indicado.");
     assert_eq!(h.dialog(), "");
+    // R/C Dir.: only a resident is known so far; he is not a member of the condominium.
     onboard(&h, 3, "Pedro Costa", "", 1, "1/2/2025");
-    onboard(&h, 1, "Álvaro Maria", "", 2, "01/03/2025");
+    assert_eq!(h.notice(), "Residente indicado.");
+    onboard(&h, 1, "Álvaro Maria", "", 1, "01/03/2025");
+
+    // A unit has one owner: a second one is refused until the first has left.
+    let before = names(&h);
+    onboard(&h, 1, "Outro Dono", "", 0, "01/04/2025");
+    assert_eq!(
+        h.error(),
+        "A fração já tem proprietário. Registe primeiro a saída do atual."
+    );
+    h.backend().invoke_close_dialog();
+    assert_eq!(names(&h), before);
 
     // Mistakes are explained and change nothing.
     let before = names(&h).len();
@@ -117,7 +136,7 @@ fn building_up_a_condominium_end_to_end() {
     onboard(&h, 2, "Mau Email", "isto-nao-e-email", 0, "01/01/2025");
     assert_eq!(h.error(), "Email inválido.");
     onboard(&h, 2, "   ", "", 0, "01/01/2025");
-    assert_eq!(h.error(), "Indique o nome do residente.");
+    assert_eq!(h.error(), "Indique o nome da pessoa.");
     h.backend().invoke_close_dialog();
     assert_eq!(names(&h).len(), before);
 
@@ -130,12 +149,12 @@ fn building_up_a_condominium_end_to_end() {
         .collect();
     assert_eq!(
         stats,
-        ["Frações=3", "Residentes ativos=3", "Frações ocupadas=2/3"]
+        ["Frações=3", "Proprietários=1", "Frações com residente=2/3"]
     );
     assert_eq!(rows(h.backend().get_overview_units()).len(), 3);
     assert_eq!(
         rows(h.backend().get_activity())[0].text,
-        "Entrada registada · 1.o Esq."
+        "Novo residente · 1.o Esq."
     );
 
     // --- Units page, search ---------------------------------------------------------------------
@@ -146,6 +165,18 @@ fn building_up_a_condominium_end_to_end() {
         "3 frações no condomínio"
     );
     h.snapshot("14-units");
+    // Each unit shows who owns it and, apart, who lives in it.
+    let units = rows(h.backend().get_units());
+    let who = |label: &str| {
+        let u = units.iter().find(|u| u.label.as_str() == label).unwrap();
+        (u.owner.to_string(), u.resident.to_string())
+    };
+    assert_eq!(
+        who("1.o Esq."),
+        ("Maria Silva".into(), "Álvaro Maria".into())
+    );
+    assert_eq!(who("R/C Dir."), (String::new(), "Pedro Costa".into()));
+    assert_eq!(who("2.o Dir."), (String::new(), String::new()));
     h.backend().invoke_search("r/c".into());
     let found: Vec<String> = rows(h.backend().get_units())
         .iter()
@@ -167,15 +198,16 @@ fn building_up_a_condominium_end_to_end() {
     assert_eq!(h.backend().get_detail_title().as_str(), "Fração 1.o Esq.");
     assert_eq!(rows(h.backend().get_detail_rows()).len(), 2);
     h.snapshot("15-dialog-detail");
-    // "Adicionar residente" from the detail pre-selects that unit.
-    h.click("Adicionar residente");
+    // "Definir residente" from the detail pre-selects that unit and the resident role.
+    h.click("Definir residente");
     assert_eq!(h.dialog(), "onboard");
     assert_eq!(h.backend().get_preselect_unit_index(), 1);
+    assert_eq!(h.backend().get_preselect_role_index(), 1);
     h.backend().invoke_close_dialog();
 
-    // --- Residents page, leaving, history ------------------------------------------------------
-    h.click("Residentes");
-    assert_eq!(h.backend().get_page().as_str(), "residents");
+    // --- People page, leaving, history ----------------------------------------------------------
+    h.click("Pessoas");
+    assert_eq!(h.backend().get_page().as_str(), "people");
     assert_eq!(
         (
             h.backend().get_active_count(),
@@ -183,7 +215,7 @@ fn building_up_a_condominium_end_to_end() {
         ),
         (3, 0)
     );
-    h.snapshot("16-residents");
+    h.snapshot("16-people");
     let alvaro = rows(h.backend().get_relationships())
         .into_iter()
         .find(|r| r.name.as_str() == "Álvaro Maria")
@@ -231,19 +263,20 @@ fn building_up_a_condominium_end_to_end() {
         ),
         ("01/03/2025", "01/05/2025", false)
     );
-    h.snapshot("18-residents-history");
+    h.snapshot("18-people-history");
     h.backend().invoke_search("alvaro".into()); // accent-insensitive
     assert_eq!(names(&h), ["Álvaro Maria"]);
     h.backend().invoke_set_history(false);
     assert!(names(&h).is_empty());
     assert_eq!(
         h.backend().get_empty_title().as_str(),
-        "Nenhum residente encontrado."
+        "Nenhuma pessoa encontrada."
     );
 
-    // The same person can be added to another unit later, without a duplicate record.
+    // The same person can be placed in another unit later, without a duplicate record: Álvaro
+    // lived in 1.o Esq. and now owns 2.o Dir.
     h.backend().invoke_search("".into());
-    h.backend().invoke_open_onboard(-1);
+    h.backend().invoke_open_onboard(-1, 0);
     h.backend().invoke_onboard(
         2,
         true,
@@ -254,8 +287,8 @@ fn building_up_a_condominium_end_to_end() {
         0,
         "10/06/2025".into(),
     );
-    assert_eq!(h.notice(), "Residente associado à fração.");
-    h.backend().invoke_open_onboard(-1);
+    assert_eq!(h.notice(), "Proprietário indicado.");
+    h.backend().invoke_open_onboard(-1, 0);
     h.backend().invoke_onboard(
         2,
         true,
@@ -266,7 +299,7 @@ fn building_up_a_condominium_end_to_end() {
         0,
         "10/06/2025".into(),
     );
-    assert_eq!(h.error(), "Selecione um residente.");
+    assert_eq!(h.error(), "Selecione uma pessoa.");
     h.backend().invoke_close_dialog();
 
     // --- Audit trail ----------------------------------------------------------------------------
@@ -292,7 +325,7 @@ fn building_up_a_condominium_end_to_end() {
     h.sign_in("ana@example.test", PASSWORD);
     assert_eq!(h.screen(), "main");
     assert_eq!(h.backend().get_total_units(), 3);
-    h.backend().invoke_navigate("residents".into());
+    h.backend().invoke_navigate("people".into());
     assert_eq!(
         (
             h.backend().get_active_count(),
@@ -310,7 +343,7 @@ fn page_switching_resets_search_and_ignores_signed_out_requests() {
     h.backend().invoke_navigate("units".into());
     h.backend().invoke_search("zzz".into());
     assert_eq!(h.backend().get_units().row_count(), 0);
-    h.backend().invoke_navigate("residents".into());
+    h.backend().invoke_navigate("people".into());
     h.backend().invoke_navigate("units".into());
     assert_eq!(
         h.backend().get_units().row_count(),

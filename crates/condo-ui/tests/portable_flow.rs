@@ -82,7 +82,7 @@ fn exporting_and_importing_replaces_all_data() {
     assert_eq!(
         h.backend().get_import_summary().as_str(),
         format!(
-            "Estes ficheiros têm 1 frações, 0 residentes, 1 contas de utilizador e 23 movimentos bancários (anos: {}).",
+            "Estes ficheiros têm 1 frações, 0 pessoas, 1 contas de utilizador e 23 movimentos bancários (anos: {}).",
             years.join(", ")
         )
     );

@@ -2,11 +2,11 @@
 //! desktop app; their service-level behavior is covered here).
 
 use chrono::NaiveDate;
-use condo_core::occupancy::ResidentRole;
+use condo_core::occupancy::UnitRole;
 use condo_core::report::ExpenseCategory;
 use condo_core::tags::{MatchType, TagCategory};
 use condo_db::finance::{self, ImportSummary, NewCharge, TagInput};
-use condo_db::residency::{self, Onboarding, ResidentRef};
+use condo_db::residency::{self, PersonRef, Placement};
 use condo_db::{open_in_memory, users, ServiceError};
 use rusqlite::Connection;
 
@@ -35,30 +35,30 @@ fn summary(imported: usize, skipped: usize) -> ImportSummary {
     ImportSummary { imported, skipped }
 }
 
-/// A unit with one owner; returns (unit_id, resident_id).
-fn unit_with_resident(conn: &mut Connection, actor: i64) -> (i64, i64) {
+/// A unit with one owner; returns (unit_id, owner_id).
+fn unit_with_owner(conn: &mut Connection, actor: i64) -> (i64, i64) {
     let unit = residency::create_unit(conn, actor, "1A", "1").unwrap();
     let today = d(TODAY.0, TODAY.1, TODAY.2);
-    residency::onboard(
+    residency::assign(
         conn,
         actor,
-        &Onboarding {
+        &Placement {
             unit_id: unit,
-            resident: ResidentRef::New {
-                name: "Resident".into(),
+            person: PersonRef::New {
+                name: "Owner".into(),
                 email: None,
                 phone: None,
             },
-            role: ResidentRole::Owner,
+            role: UnitRole::Owner,
             start_date: d(2025, 1, 1),
         },
         today,
     )
     .unwrap();
-    let resident = conn
-        .query_row("SELECT id FROM residents", [], |r| r.get(0))
+    let owner = conn
+        .query_row("SELECT id FROM people", [], |r| r.get(0))
         .unwrap();
-    (unit, resident)
+    (unit, owner)
 }
 
 fn first_transaction_id(conn: &Connection) -> i64 {
@@ -106,13 +106,13 @@ fn imports_atomically_skips_overlapping_rows_and_preserves_classifications() {
 #[test]
 fn matches_partial_payments_without_overpaying_a_charge_or_spending_income_twice() {
     let (mut conn, user) = world();
-    let (unit, resident) = unit_with_resident(&mut conn, user);
+    let (unit, owner) = unit_with_owner(&mut conn, user);
     let charge = |conn: &mut Connection, description: &str, due: NaiveDate| {
         finance::create_charge(
             conn,
             user,
             &NewCharge {
-                resident_id: resident,
+                owner_id: owner,
                 unit_id: unit,
                 description: description.into(),
                 due_date: due,
@@ -169,12 +169,12 @@ fn matches_partial_payments_without_overpaying_a_charge_or_spending_income_twice
 #[test]
 fn rejects_non_positive_amounts_expenses_and_unknown_ids_when_allocating() {
     let (mut conn, user) = world();
-    let (unit, resident) = unit_with_resident(&mut conn, user);
+    let (unit, owner) = unit_with_owner(&mut conn, user);
     let charge = finance::create_charge(
         &mut conn,
         user,
         &NewCharge {
-            resident_id: resident,
+            owner_id: owner,
             unit_id: unit,
             description: "Quota".into(),
             due_date: d(2025, 1, 31),
@@ -224,28 +224,28 @@ fn rejects_non_positive_amounts_expenses_and_unknown_ids_when_allocating() {
 }
 
 #[test]
-fn a_remembered_payer_name_cannot_be_split_across_residents() {
+fn a_remembered_payer_name_cannot_be_split_across_owners() {
     let (mut conn, user) = world();
-    let (unit, resident) = unit_with_resident(&mut conn, user);
+    let (unit, owner) = unit_with_owner(&mut conn, user);
     let second_unit = residency::create_unit(&mut conn, user, "1B", "1").unwrap();
-    residency::onboard(
+    residency::assign(
         &mut conn,
         user,
-        &Onboarding {
+        &Placement {
             unit_id: second_unit,
-            resident: ResidentRef::New {
+            person: PersonRef::New {
                 name: "Other".into(),
                 email: None,
                 phone: None,
             },
-            role: ResidentRole::Tenant,
+            role: UnitRole::Owner,
             start_date: d(2025, 1, 1),
         },
         d(2025, 6, 15),
     )
     .unwrap();
     let other: i64 = conn
-        .query_row("SELECT id FROM residents WHERE name = 'Other'", [], |r| {
+        .query_row("SELECT id FROM people WHERE name = 'Other'", [], |r| {
             r.get(0)
         })
         .unwrap();
@@ -254,7 +254,7 @@ fn a_remembered_payer_name_cannot_be_split_across_residents() {
             conn,
             user,
             &NewCharge {
-                resident_id: r,
+                owner_id: r,
                 unit_id: u,
                 description: "Quota".into(),
                 due_date: d(2025, 1, 31),
@@ -263,7 +263,7 @@ fn a_remembered_payer_name_cannot_be_split_across_residents() {
         )
         .unwrap()
     };
-    let a = mk(&mut conn, resident, unit);
+    let a = mk(&mut conn, owner, unit);
     let b = mk(&mut conn, other, second_unit);
     import(
         &mut conn,
@@ -362,7 +362,7 @@ fn learns_expense_names_once_and_applies_saved_tags_only_to_new_imports() {
             pattern: "Bank fee".into(),
             match_type: MatchType::Contains,
             category: TagCategory::Extraordinary,
-            resident_id: None,
+            owner_id: None,
             unit_id: None,
         },
         Some(data.tags[0].tag.id),
@@ -398,14 +398,14 @@ fn learns_expense_names_once_and_applies_saved_tags_only_to_new_imports() {
 }
 
 #[test]
-fn remembers_resident_payment_names_without_automatically_settling_future_quotas() {
+fn remembers_owner_payment_names_without_automatically_settling_future_quotas() {
     let (mut conn, user) = world();
-    let (unit, resident) = unit_with_resident(&mut conn, user);
+    let (unit, owner) = unit_with_owner(&mut conn, user);
     let charge = finance::create_charge(
         &mut conn,
         user,
         &NewCharge {
-            resident_id: resident,
+            owner_id: owner,
             unit_id: unit,
             description: "Quota".into(),
             due_date: d(2025, 1, 31),
@@ -416,7 +416,7 @@ fn remembers_resident_payment_names_without_automatically_settling_future_quotas
     import(
         &mut conn,
         user,
-        "2025-01-03\t2025-01-03\tTR Resident\t100\t5000",
+        "2025-01-03\t2025-01-03\tTR Owner\t100\t5000",
     )
     .unwrap();
     let first = first_transaction_id(&conn);
@@ -425,21 +425,18 @@ fn remembers_resident_payment_names_without_automatically_settling_future_quotas
     import(
         &mut conn,
         user,
-        "2025-02-03\t2025-02-03\tTR RESIDENT\t90\t5090",
+        "2025-02-03\t2025-02-03\tTR OWNER\t90\t5090",
     )
     .unwrap();
     let mut data = finance::list(&conn).unwrap();
-    assert_eq!(data.transactions[0].resident_id, Some(resident));
+    assert_eq!(data.transactions[0].owner_id, Some(owner));
     assert_eq!(data.transactions[0].unit_id, Some(unit));
-    assert_eq!(
-        data.transactions[0].resident_name.as_deref(),
-        Some("Resident")
-    );
+    assert_eq!(data.transactions[0].owner_name.as_deref(), Some("Owner"));
     assert_eq!(data.payments.len(), 1); // identified, but no payment was created automatically
 
     finance::identify(&mut conn, user, data.transactions[0].id, None, None, true).unwrap();
     data = finance::list(&conn).unwrap();
-    assert_eq!(data.transactions[0].resident_id, None);
+    assert_eq!(data.transactions[0].owner_id, None);
     assert_eq!(data.tags.len(), 1);
 
     let wrong_account = finance::save_tag(
@@ -449,8 +446,8 @@ fn remembers_resident_payment_names_without_automatically_settling_future_quotas
             name: "Wrong account".into(),
             pattern: "Wrong payer".into(),
             match_type: MatchType::Exact,
-            category: TagCategory::ResidentPayment,
-            resident_id: Some(resident),
+            category: TagCategory::OwnerPayment,
+            owner_id: Some(owner),
             unit_id: Some(999_999),
         },
         None,
@@ -477,7 +474,7 @@ fn supports_opt_out_and_the_tag_registry() {
         pattern: "Bank fee".into(),
         match_type: MatchType::Contains,
         category: TagCategory::Recurring,
-        resident_id: None,
+        owner_id: None,
         unit_id: None,
     };
     let tag = finance::save_tag(&mut conn, user, &input, None).unwrap();
@@ -501,13 +498,13 @@ fn supports_opt_out_and_the_tag_registry() {
         user,
         &TagInput {
             pattern: "Invalid payer".into(),
-            category: TagCategory::ResidentPayment,
+            category: TagCategory::OwnerPayment,
             ..input.clone()
         },
         None,
     );
     assert!(
-        matches!(&invalid, Err(ServiceError::Rejected(m)) if m == "O residente não tem relação com esta fração.")
+        matches!(&invalid, Err(ServiceError::Rejected(m)) if m == "A pessoa indicada não é proprietária desta fração.")
     );
     let short = finance::save_tag(
         &mut conn,
@@ -556,7 +553,7 @@ fn supports_opt_out_and_the_tag_registry() {
 #[test]
 fn classify_only_applies_to_expenses_and_charges_need_a_relationship() {
     let (mut conn, user) = world();
-    let (unit, resident) = unit_with_resident(&mut conn, user);
+    let (unit, owner) = unit_with_owner(&mut conn, user);
     import(&mut conn, user, "2025-01-03\t2025-01-03\tPayer\t50\t5000").unwrap();
     let income = first_transaction_id(&conn);
     assert!(matches!(
@@ -565,7 +562,7 @@ fn classify_only_applies_to_expenses_and_charges_need_a_relationship() {
     ));
 
     let base = NewCharge {
-        resident_id: resident,
+        owner_id: owner,
         unit_id: unit,
         description: "Quota".into(),
         due_date: d(2025, 1, 31),
@@ -617,4 +614,61 @@ fn rejects_oversized_statements_without_touching_the_database() {
         Err(ServiceError::InvalidInput(_))
     ));
     assert_eq!(count(&conn, "audit_events"), 0);
+}
+
+#[test]
+fn only_owners_hold_an_account_so_a_resident_can_be_neither_billed_nor_identified_as_payer() {
+    let (mut conn, user) = world();
+    let (unit, owner) = unit_with_owner(&mut conn, user);
+    residency::assign(
+        &mut conn,
+        user,
+        &Placement {
+            unit_id: unit,
+            person: PersonRef::New {
+                name: "Tenant".into(),
+                email: None,
+                phone: None,
+            },
+            role: UnitRole::Resident,
+            start_date: d(2025, 1, 1),
+        },
+        d(TODAY.0, TODAY.1, TODAY.2),
+    )
+    .unwrap();
+    let tenant: i64 = conn
+        .query_row("SELECT id FROM people WHERE name = 'Tenant'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    let quota = |person| NewCharge {
+        owner_id: person,
+        unit_id: unit,
+        description: "Quota".into(),
+        due_date: d(2025, 1, 31),
+        amount: 10_000,
+    };
+    let refused = finance::create_charge(&mut conn, user, &quota(tenant));
+    assert!(
+        matches!(&refused, Err(ServiceError::Rejected(m)) if m == "A pessoa indicada não é proprietária desta fração."),
+        "{refused:?}"
+    );
+    assert_eq!(count(&conn, "finance_charges"), 0);
+
+    // The tenant may well be the one who pays; the payment is identified as the owner's.
+    finance::create_charge(&mut conn, user, &quota(owner)).unwrap();
+    import(
+        &mut conn,
+        user,
+        "2025-01-03\t2025-01-03\tTRF TENANT\t100\t5000",
+    )
+    .unwrap();
+    let tx = first_transaction_id(&conn);
+    let refused = finance::identify(&mut conn, user, tx, Some(tenant), Some(unit), true);
+    assert!(
+        matches!(refused, Err(ServiceError::Rejected(_))),
+        "{refused:?}"
+    );
+    finance::identify(&mut conn, user, tx, Some(owner), Some(unit), true).unwrap();
+    assert_eq!(count(&conn, "finance_tags"), 1);
 }

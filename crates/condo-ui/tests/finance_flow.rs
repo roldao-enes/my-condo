@@ -42,7 +42,7 @@ fn importing_classifying_charging_and_matching_payments() {
     setup_admin(&h);
     h.tall();
 
-    // A resident to bill.
+    // An owner to bill.
     add_unit(&h, "1.º Esq.", "1");
     onboard(&h, 1, "Maria Silva");
 
@@ -145,7 +145,7 @@ fn importing_classifying_charging_and_matching_payments() {
         "11/02/2025".into(),
         "331,68".into(),
     );
-    assert_eq!(h.error(), "Selecione um residente.");
+    assert_eq!(h.error(), "Selecione um proprietário.");
     h.backend().invoke_create_charge(
         1,
         "Quota de fevereiro".into(),
@@ -170,7 +170,7 @@ fn importing_classifying_charging_and_matching_payments() {
     assert_eq!(h.backend().get_pay_available().as_str(), money(21400));
     h.backend().invoke_identify(payment, 1, true);
     assert_eq!(h.dialog(), "payment", "the dialog stays open");
-    assert_eq!(h.notice(), "Identificação do residente atualizada.");
+    assert_eq!(h.notice(), "Identificação do proprietário atualizada.");
     assert_eq!(h.backend().get_pay_identity_index(), 1);
     // Picking the charge suggests the most that can be assigned.
     h.backend().invoke_pay_pick_charge(1);
@@ -240,7 +240,7 @@ fn importing_classifying_charging_and_matching_payments() {
     );
     assert_eq!(h.notice(), "Etiqueta guardada.");
     assert_eq!(h.backend().get_fin_tags().row_count(), 3);
-    // A resident-payment tag needs a resident.
+    // An owner-payment tag needs an owner.
     h.click("Nova etiqueta");
     h.backend()
         .invoke_save_tag(-1, "Maria".into(), "tr maria silva".into(), 0, 2, 0);

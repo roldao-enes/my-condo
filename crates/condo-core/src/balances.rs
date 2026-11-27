@@ -1,6 +1,6 @@
-//! Resident debt. Ported from `financeBalances` in `inertia/lib/finances.ts`.
+//! Owner debt. Ported from `financeBalances` in `inertia/lib/finances.ts`.
 //!
-//! Only matched payments reduce a charge, and a charge stays with the resident it was issued
+//! Only matched payments reduce a charge, and a charge stays with the owner it was issued
 //! to, so a new owner never inherits an earlier owner's debt.
 
 use std::collections::HashMap;
@@ -10,7 +10,7 @@ use chrono::NaiveDate;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Charge {
     pub id: i64,
-    pub resident_id: i64,
+    pub owner_id: i64,
     pub unit_id: i64,
     pub name: String,
     pub unit_label: String,
@@ -39,7 +39,7 @@ pub struct ChargeBalance {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AccountBalance {
-    pub resident_id: i64,
+    pub owner_id: i64,
     pub unit_id: i64,
     pub name: String,
     pub unit_label: String,
@@ -50,7 +50,7 @@ pub struct AccountBalance {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Balances {
     pub charges: Vec<ChargeBalance>,
-    /// One per (resident, unit), in order of first appearance.
+    /// One per (owner, unit), in order of first appearance.
     pub accounts: Vec<AccountBalance>,
 }
 
@@ -83,10 +83,10 @@ pub fn finance_balances(charges: &[Charge], payments: &[Payment], today: NaiveDa
     for balance in &balances {
         let charge = &balance.charge;
         let i = *index
-            .entry((charge.resident_id, charge.unit_id))
+            .entry((charge.owner_id, charge.unit_id))
             .or_insert_with(|| {
                 accounts.push(AccountBalance {
-                    resident_id: charge.resident_id,
+                    owner_id: charge.owner_id,
                     unit_id: charge.unit_id,
                     name: charge.name.clone(),
                     unit_label: charge.unit_label.clone(),
@@ -114,10 +114,10 @@ mod tests {
     }
 
     #[test]
-    fn resident_debt_uses_only_matched_payments_and_keeps_historical_responsibility() {
+    fn owner_debt_uses_only_matched_payments_and_keeps_historical_responsibility() {
         let base = Charge {
             id: 0,
-            resident_id: 1,
+            owner_id: 1,
             unit_id: 1,
             name: "Owner".into(),
             unit_label: "1A".into(),
@@ -138,7 +138,7 @@ mod tests {
             },
             Charge {
                 id: 3,
-                resident_id: 2,
+                owner_id: 2,
                 name: "New owner".into(),
                 due_date: d(2025, 2, 1),
                 ..base

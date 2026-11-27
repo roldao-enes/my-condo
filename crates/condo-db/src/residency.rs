@@ -1,14 +1,18 @@
-//! Units, residents and their dated relationships.
+//! Units, people and their dated relationships.
 //! Ported from `ResidencyService` and `ResidencyRepository`.
 //!
-//! Nothing is ever deleted: offboarding only sets `end_date`, so the person, the unit, the
-//! relationship and the audit trail all survive.
+//! A person relates to a unit as its **owner** (a condominium member: charges, payments and
+//! announcements concern them) or as its **resident** (who lives there, often a tenant;
+//! indicative only). A unit has one active owner and at most one active resident.
+//!
+//! Nothing is ever deleted: ending a relationship only sets `end_date`, so the person, the unit,
+//! the relationship and the audit trail all survive.
 
 use chrono::NaiveDate;
 use condo_core::locale::collate_pt;
-use condo_core::occupancy::ResidentRole;
+use condo_core::occupancy::UnitRole;
 use condo_core::recipients::is_valid_email;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::json;
 
 use crate::audit_events;
@@ -17,7 +21,7 @@ use crate::write_tx;
 
 /// Who is being placed in a unit.
 #[derive(Debug, Clone)]
-pub enum ResidentRef {
+pub enum PersonRef {
     Existing(i64),
     New {
         name: String,
@@ -26,11 +30,12 @@ pub enum ResidentRef {
     },
 }
 
+/// Makes a person the owner or the resident of a unit, from `start_date`.
 #[derive(Debug, Clone)]
-pub struct Onboarding {
+pub struct Placement {
     pub unit_id: i64,
-    pub resident: ResidentRef,
-    pub role: ResidentRole,
+    pub person: PersonRef,
+    pub role: UnitRole,
     pub start_date: NaiveDate,
 }
 
@@ -63,12 +68,45 @@ pub fn create_unit(
     Ok(unit_id)
 }
 
-/// Places a resident (new or existing) in a unit. `today` is the current Lisbon date.
+/// Validated fields of a person about to be created.
+type NewPerson = (String, Option<String>, Option<String>);
+
+fn parse_new_person(
+    name: &str,
+    email: Option<&str>,
+    phone: Option<&str>,
+) -> ServiceResult<NewPerson> {
+    if name.trim().is_empty() {
+        return Err(ServiceError::Rejected("Indique o nome da pessoa.".into()));
+    }
+    let name = text(name, 1, 160, "O nome deve ter no máximo 160 caracteres.")?;
+    let email = match email.map(str::trim).filter(|e| !e.is_empty()) {
+        Some(e) if e.chars().count() <= 254 && is_valid_email(e) => Some(e.to_owned()),
+        Some(_) => return Err(ServiceError::InvalidInput("Email inválido.".into())),
+        None => None,
+    };
+    let phone = match phone.map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) if p.chars().count() <= 40 => Some(p.to_owned()),
+        Some(_) => {
+            return Err(ServiceError::InvalidInput(
+                "O telefone deve ter no máximo 40 caracteres.".into(),
+            ))
+        }
+        None => None,
+    };
+    Ok((name, email, phone))
+}
+
+/// Makes a person the owner or the resident of a unit. `today` is the current Lisbon date.
 /// Returns the new occupancy id.
-pub fn onboard(
+///
+/// * **Owner**: refused while the unit has an active owner. Record the previous owner's exit
+///   first, so the date a sale took effect is explicit and old charges stay with the old owner.
+/// * **Resident**: replaces the current resident, if any, whose stay ends on `start_date`.
+pub fn assign(
     conn: &mut Connection,
     actor_id: i64,
-    input: &Onboarding,
+    input: &Placement,
     today: NaiveDate,
 ) -> ServiceResult<i64> {
     if input.start_date > today {
@@ -76,31 +114,11 @@ pub fn onboard(
             "A entrada não pode ser futura.".into(),
         ));
     }
-    // Validate and normalize new-resident fields before touching the database.
-    let new_resident = match &input.resident {
-        ResidentRef::Existing(_) => None,
-        ResidentRef::New { name, email, phone } => {
-            if name.trim().is_empty() {
-                return Err(ServiceError::Rejected(
-                    "Indique o nome do residente.".into(),
-                ));
-            }
-            let name = text(name, 1, 160, "O nome deve ter no máximo 160 caracteres.")?;
-            let email = match email.as_deref().map(str::trim).filter(|e| !e.is_empty()) {
-                Some(e) if e.chars().count() <= 254 && is_valid_email(e) => Some(e.to_owned()),
-                Some(_) => return Err(ServiceError::InvalidInput("Email inválido.".into())),
-                None => None,
-            };
-            let phone = match phone.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
-                Some(p) if p.chars().count() <= 40 => Some(p.to_owned()),
-                Some(_) => {
-                    return Err(ServiceError::InvalidInput(
-                        "O telefone deve ter no máximo 40 caracteres.".into(),
-                    ))
-                }
-                None => None,
-            };
-            Some((name, email, phone))
+    // Validate and normalize new-person fields before touching the database.
+    let new_person = match &input.person {
+        PersonRef::Existing(_) => None,
+        PersonRef::New { name, email, phone } => {
+            Some(parse_new_person(name, email.as_deref(), phone.as_deref())?)
         }
     };
 
@@ -113,32 +131,52 @@ pub fn onboard(
     if !unit_exists {
         return Err(ServiceError::NotFound("Fração não encontrada.".into()));
     }
-    let resident_id = match (&input.resident, new_resident) {
-        (ResidentRef::Existing(id), _) => {
+    let person_id = match (&input.person, new_person) {
+        (PersonRef::Existing(id), _) => {
             let exists: bool = tx.query_row(
-                "SELECT EXISTS (SELECT 1 FROM residents WHERE id = ?1)",
+                "SELECT EXISTS (SELECT 1 FROM people WHERE id = ?1)",
                 [id],
                 |row| row.get(0),
             )?;
             if !exists {
-                return Err(ServiceError::NotFound("Residente não encontrado.".into()));
+                return Err(ServiceError::NotFound("Pessoa não encontrada.".into()));
             }
             *id
         }
         (_, Some((name, email, phone))) => {
             tx.execute(
-                "INSERT INTO residents (name, email, phone) VALUES (?1, ?2, ?3)",
+                "INSERT INTO people (name, email, phone) VALUES (?1, ?2, ?3)",
                 params![name, email, phone],
             )?;
             tx.last_insert_rowid()
         }
-        (ResidentRef::New { .. }, None) => unreachable!("new resident fields are always parsed"),
+        (PersonRef::New { .. }, None) => unreachable!("new person fields are always parsed"),
     };
+
+    match input.role {
+        UnitRole::Owner => {
+            let has_owner: bool = tx.query_row(
+                "SELECT EXISTS (SELECT 1 FROM occupancies
+                                 WHERE unit_id = ?1 AND role = 'owner' AND end_date IS NULL)",
+                [input.unit_id],
+                |row| row.get(0),
+            )?;
+            if has_owner {
+                return Err(ServiceError::Conflict(
+                    "A fração já tem proprietário. Registe primeiro a saída do atual.".into(),
+                ));
+            }
+        }
+        UnitRole::Resident => {
+            end_current_residents(&tx, actor_id, input.unit_id, person_id, input.start_date)?
+        }
+    }
+
     tx.execute(
-        "INSERT INTO occupancies (unit_id, resident_id, role, start_date) VALUES (?1, ?2, ?3, ?4)",
+        "INSERT INTO occupancies (unit_id, person_id, role, start_date) VALUES (?1, ?2, ?3, ?4)",
         params![
             input.unit_id,
-            resident_id,
+            person_id,
             input.role.as_str(),
             input.start_date
         ],
@@ -147,13 +185,15 @@ pub fn onboard(
     audit_events::record(
         &tx,
         actor_id,
-        "resident.onboarded",
+        match input.role {
+            UnitRole::Owner => "unit.owner_set",
+            UnitRole::Resident => "unit.resident_set",
+        },
         "occupancy",
         occupancy_id,
         Some(&json!({
             "unitId": input.unit_id,
-            "residentId": resident_id,
-            "role": input.role.as_str(),
+            "personId": person_id,
             "startDate": input.start_date.to_string(),
         })),
     )?;
@@ -161,8 +201,53 @@ pub fn onboard(
     Ok(occupancy_id)
 }
 
-/// Ends a relationship. `today` is the current Lisbon date.
-pub fn offboard(
+/// Closes whoever lives in the unit on `start_date`, the day the next resident arrives.
+fn end_current_residents(
+    tx: &Transaction,
+    actor_id: i64,
+    unit_id: i64,
+    new_person_id: i64,
+    start_date: NaiveDate,
+) -> ServiceResult<()> {
+    let current: Vec<(i64, i64, NaiveDate)> = tx
+        .prepare(
+            "SELECT id, person_id, start_date FROM occupancies
+              WHERE unit_id = ?1 AND role = 'resident' AND end_date IS NULL ORDER BY id",
+        )?
+        .query_map([unit_id], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    if current
+        .iter()
+        .any(|(_, person, _)| *person == new_person_id)
+    {
+        return Err(ServiceError::Conflict(
+            "Esta pessoa já é a residente desta fração.".into(),
+        ));
+    }
+    if current.iter().any(|(_, _, started)| start_date < *started) {
+        return Err(ServiceError::InvalidInput(
+            "A entrada não pode ser anterior à do residente atual.".into(),
+        ));
+    }
+    for (id, _, _) in current {
+        tx.execute(
+            "UPDATE occupancies SET end_date = ?1 WHERE id = ?2",
+            params![start_date, id],
+        )?;
+        audit_events::record(
+            tx,
+            actor_id,
+            "unit.resident_ended",
+            "occupancy",
+            id,
+            Some(&json!({ "endDate": start_date.to_string(), "replaced": true })),
+        )?;
+    }
+    Ok(())
+}
+
+/// Ends the ownership or residency recorded by `occupancy_id`. `today` is the current Lisbon date.
+pub fn end_relationship(
     conn: &mut Connection,
     actor_id: i64,
     occupancy_id: i64,
@@ -170,14 +255,14 @@ pub fn offboard(
     today: NaiveDate,
 ) -> ServiceResult<()> {
     let tx = write_tx(conn)?;
-    let relationship: Option<(NaiveDate, Option<NaiveDate>)> = tx
+    let relationship: Option<(String, NaiveDate, Option<NaiveDate>)> = tx
         .query_row(
-            "SELECT start_date, end_date FROM occupancies WHERE id = ?1",
+            "SELECT role, start_date, end_date FROM occupancies WHERE id = ?1",
             [occupancy_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         )
         .optional()?;
-    let Some((start_date, current_end)) = relationship else {
+    let Some((role, start_date, current_end)) = relationship else {
         return Err(ServiceError::NotFound("Relação não encontrada.".into()));
     };
     if current_end.is_some() {
@@ -202,7 +287,11 @@ pub fn offboard(
     audit_events::record(
         &tx,
         actor_id,
-        "resident.offboarded",
+        if role == "owner" {
+            "unit.owner_ended"
+        } else {
+            "unit.resident_ended"
+        },
         "occupancy",
         occupancy_id,
         Some(&json!({ "endDate": end_date.to_string() })),
@@ -219,7 +308,7 @@ pub struct Unit {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Resident {
+pub struct Person {
     pub id: i64,
     pub name: String,
     pub email: Option<String>,
@@ -230,9 +319,9 @@ pub struct Resident {
 pub struct Relationship {
     pub id: i64,
     pub unit_id: i64,
-    pub resident_id: i64,
+    pub person_id: i64,
     pub unit_label: String,
-    pub role: ResidentRole,
+    pub role: UnitRole,
     pub name: String,
     pub email: Option<String>,
     pub phone: Option<String>,
@@ -243,11 +332,11 @@ pub struct Relationship {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Directory {
     pub units: Vec<Unit>,
-    pub residents: Vec<Resident>,
+    pub people: Vec<Person>,
     pub relationships: Vec<Relationship>,
 }
 
-/// Everything the residency screens show. Units and residents are sorted with Portuguese
+/// Everything the residency screens show. Units and people are sorted with Portuguese
 /// collation; relationships are most recent first.
 pub fn list(conn: &Connection) -> rusqlite::Result<Directory> {
     let mut units: Vec<Unit> = conn
@@ -262,10 +351,10 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Directory> {
         .collect::<Result<_, _>>()?;
     units.sort_by(|a, b| collate_pt(&a.label, &b.label));
 
-    let mut residents: Vec<Resident> = conn
-        .prepare("SELECT id, name, email, phone FROM residents")?
+    let mut people: Vec<Person> = conn
+        .prepare("SELECT id, name, email, phone FROM people")?
         .query_map([], |row| {
-            Ok(Resident {
+            Ok(Person {
                 id: row.get(0)?,
                 name: row.get(1)?,
                 email: row.get(2)?,
@@ -273,14 +362,14 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Directory> {
             })
         })?
         .collect::<Result<_, _>>()?;
-    residents.sort_by(|a, b| collate_pt(&a.name, &b.name));
+    people.sort_by(|a, b| collate_pt(&a.name, &b.name));
 
     let relationships = conn
         .prepare(
-            "SELECT o.id, o.unit_id, o.resident_id, u.label, o.role, r.name, r.email, r.phone,
+            "SELECT o.id, o.unit_id, o.person_id, u.label, o.role, r.name, r.email, r.phone,
                     o.start_date, o.end_date
                FROM occupancies o
-               JOIN residents r ON r.id = o.resident_id
+               JOIN people r ON r.id = o.person_id
                JOIN units u ON u.id = o.unit_id
               ORDER BY COALESCE(o.end_date, o.start_date) DESC, o.id DESC",
         )?
@@ -289,9 +378,9 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Directory> {
             Ok(Relationship {
                 id: row.get(0)?,
                 unit_id: row.get(1)?,
-                resident_id: row.get(2)?,
+                person_id: row.get(2)?,
                 unit_label: row.get(3)?,
-                role: ResidentRole::parse(&role).ok_or_else(|| {
+                role: UnitRole::parse(&role).ok_or_else(|| {
                     rusqlite::Error::FromSqlConversionFailure(
                         4,
                         rusqlite::types::Type::Text,
@@ -309,7 +398,7 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Directory> {
 
     Ok(Directory {
         units,
-        residents,
+        people,
         relationships,
     })
 }
@@ -323,9 +412,8 @@ mod tests {
         NaiveDate::from_ymd_opt(y, m, day).unwrap()
     }
 
-    const TODAY: (i32, u32, u32) = (2025, 6, 15);
     fn today() -> NaiveDate {
-        d(TODAY.0, TODAY.1, TODAY.2)
+        d(2025, 6, 15)
     }
 
     fn setup() -> (Connection, i64) {
@@ -334,26 +422,32 @@ mod tests {
         (conn, actor)
     }
 
-    fn new_resident(name: &str) -> ResidentRef {
-        ResidentRef::New {
+    fn new_person(name: &str) -> PersonRef {
+        PersonRef::New {
             name: name.into(),
             email: None,
             phone: None,
         }
     }
 
-    fn onboarding(
-        unit_id: i64,
-        resident: ResidentRef,
-        role: ResidentRole,
-        start: NaiveDate,
-    ) -> Onboarding {
-        Onboarding {
+    fn placement(unit_id: i64, person: PersonRef, role: UnitRole, start: NaiveDate) -> Placement {
+        Placement {
             unit_id,
-            resident,
+            person,
             role,
             start_date: start,
         }
+    }
+
+    fn assign_ok(
+        conn: &mut Connection,
+        actor: i64,
+        unit: i64,
+        person: PersonRef,
+        role: UnitRole,
+        start: NaiveDate,
+    ) -> i64 {
+        assign(conn, actor, &placement(unit, person, role, start), today()).unwrap()
     }
 
     fn count(conn: &Connection, table: &str) -> i64 {
@@ -370,152 +464,287 @@ mod tests {
             .unwrap()
     }
 
+    fn end_of(conn: &Connection, occupancy: i64) -> Option<NaiveDate> {
+        conn.query_row(
+            "SELECT end_date FROM occupancies WHERE id = ?1",
+            [occupancy],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
     #[test]
-    fn offboarding_preserves_the_person_unit_relationship_and_audit_trail() {
+    fn ending_a_relationship_preserves_the_person_unit_relationship_and_audit_trail() {
         let (mut conn, actor) = setup();
         let unit = create_unit(&mut conn, actor, "1A", "1").unwrap();
-        let rel = onboard(
+        let rel = assign_ok(
             &mut conn,
             actor,
-            &onboarding(
-                unit,
-                new_resident("Test Resident"),
-                ResidentRole::Owner,
-                d(2025, 1, 1),
-            ),
-            today(),
-        )
-        .unwrap();
-        offboard(&mut conn, actor, rel, d(2025, 2, 1), today()).unwrap();
+            unit,
+            new_person("Test Owner"),
+            UnitRole::Owner,
+            d(2025, 1, 1),
+        );
+        end_relationship(&mut conn, actor, rel, d(2025, 2, 1), today()).unwrap();
 
-        let (end, resident_id): (Option<NaiveDate>, i64) = conn
+        let person_id: i64 = conn
             .query_row(
-                "SELECT end_date, resident_id FROM occupancies WHERE id = ?1",
+                "SELECT person_id FROM occupancies WHERE id = ?1",
                 [rel],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(end, Some(d(2025, 2, 1)));
-        assert_eq!(count(&conn, "residents"), 1);
+        assert_eq!(end_of(&conn, rel), Some(d(2025, 2, 1)));
+        assert_eq!(count(&conn, "people"), 1);
         assert_eq!(count(&conn, "units"), 1);
         assert_eq!(
             audit_actions(&conn),
-            ["unit.created", "resident.onboarded", "resident.offboarded"]
+            ["unit.created", "unit.owner_set", "unit.owner_ended"]
         );
 
         // Closing twice is a conflict.
-        let again = offboard(&mut conn, actor, rel, d(2025, 2, 2), today());
+        let again = end_relationship(&mut conn, actor, rel, d(2025, 2, 2), today());
         assert!(matches!(again, Err(ServiceError::Conflict(_))));
 
-        // The same person can later be placed again, reusing the existing resident.
-        onboard(
+        // The same person can later own the unit again, reusing the existing record.
+        assign_ok(
             &mut conn,
             actor,
-            &onboarding(
-                unit,
-                ResidentRef::Existing(resident_id),
-                ResidentRole::Owner,
-                d(2025, 3, 1),
-            ),
-            today(),
-        )
-        .unwrap();
-        assert_eq!(count(&conn, "residents"), 1);
+            unit,
+            PersonRef::Existing(person_id),
+            UnitRole::Owner,
+            d(2025, 3, 1),
+        );
+        assert_eq!(count(&conn, "people"), 1);
         assert_eq!(count(&conn, "occupancies"), 2);
     }
 
     #[test]
-    fn invalid_dates_and_duplicate_active_relationships_leave_no_partial_writes() {
+    fn a_unit_has_one_owner_at_a_time_and_a_sale_is_end_then_set() {
         let (mut conn, actor) = setup();
-        let unit = create_unit(&mut conn, actor, "1B", "1").unwrap();
-        let rel = onboard(
+        let unit = create_unit(&mut conn, actor, "1A", "1").unwrap();
+        let first = assign_ok(
             &mut conn,
             actor,
-            &onboarding(
-                unit,
-                new_resident("Test Resident"),
-                ResidentRole::Tenant,
-                d(2025, 1, 1),
-            ),
-            today(),
-        )
-        .unwrap();
+            unit,
+            new_person("Seller"),
+            UnitRole::Owner,
+            d(2024, 1, 1),
+        );
 
-        let before = offboard(&mut conn, actor, rel, d(2024, 12, 31), today());
-        assert!(matches!(before, Err(ServiceError::InvalidInput(_))));
-        let future = offboard(&mut conn, actor, rel, d(2025, 6, 16), today());
-        assert!(matches!(future, Err(ServiceError::Rejected(_))));
-        let end: Option<NaiveDate> = conn
-            .query_row(
-                "SELECT end_date FROM occupancies WHERE id = ?1",
-                [rel],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(end, None);
-
-        let resident_id: i64 = conn
-            .query_row(
-                "SELECT resident_id FROM occupancies WHERE id = ?1",
-                [rel],
-                |r| r.get(0),
-            )
-            .unwrap();
-        let events_before = count(&conn, "audit_events");
-        let duplicate = onboard(
+        let events = count(&conn, "audit_events");
+        let second = assign(
             &mut conn,
             actor,
-            &onboarding(
-                unit,
-                ResidentRef::Existing(resident_id),
-                ResidentRole::Tenant,
-                d(2025, 1, 1),
-            ),
+            &placement(unit, new_person("Buyer"), UnitRole::Owner, d(2025, 5, 1)),
             today(),
         );
         assert!(
-            matches!(duplicate, Err(ServiceError::Duplicate(_))),
-            "{duplicate:?}"
+            matches!(second, Err(ServiceError::Conflict(_))),
+            "{second:?}"
         );
+        // Nothing half-written: no second person, no extra relationship, no audit row.
+        assert_eq!(count(&conn, "people"), 1);
         assert_eq!(count(&conn, "occupancies"), 1);
-        assert_eq!(count(&conn, "audit_events"), events_before);
+        assert_eq!(count(&conn, "audit_events"), events);
 
-        // A failed onboarding of a brand-new resident must not leave an orphan resident behind.
-        let orphan = onboard(
+        end_relationship(&mut conn, actor, first, d(2025, 4, 30), today()).unwrap();
+        assign_ok(
             &mut conn,
             actor,
-            &onboarding(
-                9999,
-                new_resident("Nobody"),
-                ResidentRole::Owner,
+            unit,
+            new_person("Buyer"),
+            UnitRole::Owner,
+            d(2025, 5, 1),
+        );
+        let active_owners: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM occupancies
+                  WHERE unit_id = ?1 AND role = 'owner' AND end_date IS NULL",
+                [unit],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(active_owners, 1);
+    }
+
+    #[test]
+    fn a_new_resident_replaces_the_current_one_without_touching_the_owner() {
+        let (mut conn, actor) = setup();
+        let unit = create_unit(&mut conn, actor, "2A", "2").unwrap();
+        let owner = assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Owner"),
+            UnitRole::Owner,
+            d(2020, 1, 1),
+        );
+        let tenant = assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Tenant"),
+            UnitRole::Resident,
+            d(2024, 1, 1),
+        );
+        let tenant_id: i64 = conn
+            .query_row(
+                "SELECT person_id FROM occupancies WHERE id = ?1",
+                [tenant],
+                |r| r.get(0),
+            )
+            .unwrap();
+
+        // The same person cannot be set twice, and arrival cannot precede the current stay.
+        let same = assign(
+            &mut conn,
+            actor,
+            &placement(
+                unit,
+                PersonRef::Existing(tenant_id),
+                UnitRole::Resident,
                 d(2025, 1, 1),
             ),
             today(),
         );
-        assert!(matches!(orphan, Err(ServiceError::NotFound(_))));
-        assert_eq!(count(&conn, "residents"), 1);
+        assert!(matches!(same, Err(ServiceError::Conflict(_))), "{same:?}");
+        let early = assign(
+            &mut conn,
+            actor,
+            &placement(unit, new_person("Early"), UnitRole::Resident, d(2023, 1, 1)),
+            today(),
+        );
+        assert!(
+            matches!(early, Err(ServiceError::InvalidInput(_))),
+            "{early:?}"
+        );
+        assert_eq!(count(&conn, "people"), 2, "failures leave no orphan person");
+
+        let next = assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Next tenant"),
+            UnitRole::Resident,
+            d(2025, 3, 1),
+        );
+        assert_eq!(end_of(&conn, tenant), Some(d(2025, 3, 1)));
+        assert_eq!(end_of(&conn, next), None);
+        assert_eq!(end_of(&conn, owner), None, "the owner is untouched");
+        assert!(audit_actions(&conn).contains(&"unit.resident_ended".to_owned()));
     }
 
     #[test]
-    fn onboarding_input_rules() {
+    fn the_owner_may_also_be_the_resident() {
+        let (mut conn, actor) = setup();
+        let unit = create_unit(&mut conn, actor, "3A", "3").unwrap();
+        let owner = assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Maria"),
+            UnitRole::Owner,
+            d(2020, 1, 1),
+        );
+        let person_id: i64 = conn
+            .query_row(
+                "SELECT person_id FROM occupancies WHERE id = ?1",
+                [owner],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            PersonRef::Existing(person_id),
+            UnitRole::Resident,
+            d(2020, 1, 1),
+        );
+        assert_eq!(count(&conn, "people"), 1);
+        assert_eq!(count(&conn, "occupancies"), 2);
+    }
+
+    #[test]
+    fn invalid_dates_leave_no_partial_writes() {
+        let (mut conn, actor) = setup();
+        let unit = create_unit(&mut conn, actor, "1B", "1").unwrap();
+        let rel = assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Test Resident"),
+            UnitRole::Resident,
+            d(2025, 1, 1),
+        );
+
+        let before = end_relationship(&mut conn, actor, rel, d(2024, 12, 31), today());
+        assert!(matches!(before, Err(ServiceError::InvalidInput(_))));
+        let future = end_relationship(&mut conn, actor, rel, d(2025, 6, 16), today());
+        assert!(matches!(future, Err(ServiceError::Rejected(_))));
+        assert_eq!(end_of(&conn, rel), None);
+
+        // A failed placement of a brand-new person must not leave an orphan person behind.
+        let orphan = assign(
+            &mut conn,
+            actor,
+            &placement(9999, new_person("Nobody"), UnitRole::Owner, d(2025, 1, 1)),
+            today(),
+        );
+        assert!(matches!(orphan, Err(ServiceError::NotFound(_))));
+        assert_eq!(count(&conn, "people"), 1);
+    }
+
+    #[test]
+    fn the_database_itself_refuses_a_second_active_owner() {
+        let (mut conn, actor) = setup();
+        let unit = create_unit(&mut conn, actor, "9Z", "9").unwrap();
+        assign_ok(
+            &mut conn,
+            actor,
+            unit,
+            new_person("Owner"),
+            UnitRole::Owner,
+            d(2025, 1, 1),
+        );
+        conn.execute("INSERT INTO people (name) VALUES ('Other')", [])
+            .unwrap();
+        let backdoor = conn.execute(
+            "INSERT INTO occupancies (unit_id, person_id, role, start_date)
+             VALUES (?1, 2, 'owner', '2025-02-01')",
+            [unit],
+        );
+        assert!(backdoor.is_err());
+        // A closed relationship is history, not a second owner.
+        conn.execute(
+            "INSERT INTO occupancies (unit_id, person_id, role, start_date, end_date)
+             VALUES (?1, 2, 'owner', '2020-01-01', '2020-12-31')",
+            [unit],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn placement_input_rules() {
         let (mut conn, actor) = setup();
         let unit = create_unit(&mut conn, actor, "2A", "2").unwrap();
-        let go = |conn: &mut Connection, resident, start| {
-            onboard(
+        let go = |conn: &mut Connection, person, start| {
+            assign(
                 conn,
                 actor,
-                &onboarding(unit, resident, ResidentRole::Occupant, start),
+                &placement(unit, person, UnitRole::Resident, start),
                 today(),
             )
         };
 
         assert!(
-            matches!(go(&mut conn, new_resident("Ana"), d(2025, 6, 16)), Err(ServiceError::Rejected(m)) if m.contains("futura"))
+            matches!(go(&mut conn, new_person("Ana"), d(2025, 6, 16)), Err(ServiceError::Rejected(m)) if m.contains("futura"))
         );
         assert!(
-            matches!(go(&mut conn, new_resident("   "), d(2025, 1, 1)), Err(ServiceError::Rejected(m)) if m.contains("nome"))
+            matches!(go(&mut conn, new_person("   "), d(2025, 1, 1)), Err(ServiceError::Rejected(m)) if m.contains("nome"))
         );
-        let bad_email = ResidentRef::New {
+        let bad_email = PersonRef::New {
             name: "Ana".into(),
             email: Some("nope".into()),
             phone: None,
@@ -525,20 +754,20 @@ mod tests {
             Err(ServiceError::InvalidInput(_))
         ));
         assert!(matches!(
-            go(&mut conn, ResidentRef::Existing(404), d(2025, 1, 1)),
+            go(&mut conn, PersonRef::Existing(404), d(2025, 1, 1)),
             Err(ServiceError::NotFound(_))
         ));
-        assert_eq!(count(&conn, "residents"), 0);
+        assert_eq!(count(&conn, "people"), 0);
 
         // Blank email/phone become NULL, text is trimmed, today is allowed.
-        let ok = ResidentRef::New {
+        let ok = PersonRef::New {
             name: "  Ana Silva ".into(),
             email: Some("  ".into()),
             phone: Some("".into()),
         };
         go(&mut conn, ok, today()).unwrap();
         let (name, email, phone): (String, Option<String>, Option<String>) = conn
-            .query_row("SELECT name, email, phone FROM residents", [], |r| {
+            .query_row("SELECT name, email, phone FROM people", [], |r| {
                 Ok((r.get(0)?, r.get(1)?, r.get(2)?))
             })
             .unwrap();
@@ -575,47 +804,36 @@ mod tests {
         let (mut conn, actor) = setup();
         let ten = create_unit(&mut conn, actor, "10A", "10").unwrap();
         let one = create_unit(&mut conn, actor, "1A", "1").unwrap();
-        let old = onboard(
+        let old = assign_ok(
             &mut conn,
             actor,
-            &onboarding(
-                one,
-                new_resident("Álvaro"),
-                ResidentRole::Owner,
-                d(2024, 1, 1),
-            ),
-            today(),
-        )
-        .unwrap();
-        onboard(
+            one,
+            new_person("Álvaro"),
+            UnitRole::Owner,
+            d(2024, 1, 1),
+        );
+        assign_ok(
             &mut conn,
             actor,
-            &onboarding(ten, new_resident("Zé"), ResidentRole::Tenant, d(2025, 3, 1)),
-            today(),
-        )
-        .unwrap();
-        onboard(
+            ten,
+            new_person("Zé"),
+            UnitRole::Owner,
+            d(2025, 3, 1),
+        );
+        assign_ok(
             &mut conn,
             actor,
-            &onboarding(
-                ten,
-                new_resident("Ana"),
-                ResidentRole::Occupant,
-                d(2025, 1, 1),
-            ),
-            today(),
-        )
-        .unwrap();
-        offboard(&mut conn, actor, old, d(2025, 5, 1), today()).unwrap();
+            ten,
+            new_person("Ana"),
+            UnitRole::Resident,
+            d(2025, 1, 1),
+        );
+        end_relationship(&mut conn, actor, old, d(2025, 5, 1), today()).unwrap();
 
         let directory = list(&conn).unwrap();
         let labels: Vec<_> = directory.units.iter().map(|u| u.label.as_str()).collect();
         assert_eq!(labels, ["10A", "1A"]);
-        let names: Vec<_> = directory
-            .residents
-            .iter()
-            .map(|r| r.name.as_str())
-            .collect();
+        let names: Vec<_> = directory.people.iter().map(|r| r.name.as_str()).collect();
         assert_eq!(names, ["Álvaro", "Ana", "Zé"]);
         // Most recent activity first: Álvaro left 2025-05-01, then Zé (2025-03-01), then Ana.
         let order: Vec<_> = directory
@@ -624,7 +842,7 @@ mod tests {
             .map(|r| r.name.as_str())
             .collect();
         assert_eq!(order, ["Álvaro", "Zé", "Ana"]);
-        assert_eq!(directory.relationships[0].role, ResidentRole::Owner);
+        assert_eq!(directory.relationships[0].role, UnitRole::Owner);
         assert_eq!(directory.relationships[0].end_date, Some(d(2025, 5, 1)));
     }
 }

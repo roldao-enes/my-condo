@@ -91,13 +91,14 @@ pub fn queue(
         .prepare(
             "SELECT r.id, r.name, r.email, u.label
                FROM occupancies o
-               JOIN residents r ON r.id = o.resident_id
+               JOIN people r ON r.id = o.person_id
                JOIN units u ON u.id = o.unit_id
-              WHERE o.end_date IS NULL AND (?1 IS NULL OR o.unit_id = ?1)",
+              WHERE o.role = 'owner' AND o.end_date IS NULL
+                AND (?1 IS NULL OR o.unit_id = ?1)",
         )?
         .query_map([unit_id], |row| {
             Ok(RecipientRow {
-                resident_id: row.get(0)?,
+                person_id: row.get(0)?,
                 name: row.get(1)?,
                 email: row.get(2)?,
                 unit_label: row.get(3)?,
@@ -118,13 +119,13 @@ pub fn queue(
     {
         let mut insert = tx.prepare(
             "INSERT INTO email_jobs
-               (announcement_id, resident_id, recipient_name, recipient_email, unit_labels)
+               (announcement_id, person_id, recipient_name, recipient_email, unit_labels)
              VALUES (?1, ?2, ?3, ?4, ?5)",
         )?;
         for recipient in &recipients {
             insert.execute(params![
                 announcement_id,
-                recipient.resident_id,
+                recipient.person_id,
                 recipient.name,
                 recipient.email,
                 recipient.unit_labels.join(", ")
