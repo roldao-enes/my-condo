@@ -6,6 +6,7 @@ import { Theme } from "theme.slint";
 import { Backend } from "state.slint";
 import { LoginScreen, SetupScreen } from "auth.slint";
 import { Shell } from "shell.slint";
+import { FadeIn } from "components.slint";
 import { SettingsPage, RestoreDialog, ImportDialog } from "settings.slint";
 import { AnnouncementsPage, AnnouncementPage, NewAnnouncementDialog, QueueConfirmDialog } from "announcements.slint";
 import { FinancesPage, ChargeDialog, ClassifyDialog, PaymentDialog, TagDialog, TagRemoveDialog, ReportDialog } from "finances.slint";
@@ -37,37 +38,69 @@ export component AppWindow inherits Window {
         height: parent.height;
         Rectangle {
             vertical-stretch: 1;
-            if Backend.page == "overview": OverviewPage {
+            if Backend.page == "overview": FadeIn {
                 width: parent.width;
                 height: parent.height;
+                OverviewPage {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
-            if Backend.page == "units": UnitsPage {
+            if Backend.page == "units": FadeIn {
                 width: parent.width;
                 height: parent.height;
+                UnitsPage {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
-            if Backend.page == "people": PeoplePage {
+            if Backend.page == "people": FadeIn {
                 width: parent.width;
                 height: parent.height;
+                PeoplePage {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
-            if Backend.page == "finances": FinancesPage {
+            if Backend.page == "finances": FadeIn {
                 width: parent.width;
                 height: parent.height;
+                FinancesPage {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
-            if Backend.page == "providers": ProvidersPage {
+            if Backend.page == "providers": FadeIn {
                 width: parent.width;
                 height: parent.height;
+                ProvidersPage {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
-            if Backend.page == "announcements": AnnouncementsPage {
+            if Backend.page == "announcements": FadeIn {
                 width: parent.width;
                 height: parent.height;
+                AnnouncementsPage {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
-            if Backend.page == "announcement": AnnouncementPage {
+            if Backend.page == "announcement": FadeIn {
                 width: parent.width;
                 height: parent.height;
+                AnnouncementPage {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
-            if Backend.page == "settings": SettingsPage {
+            if Backend.page == "settings": FadeIn {
                 width: parent.width;
                 height: parent.height;
+                SettingsPage {
+                    width: parent.width;
+                    height: parent.height;
+                }
             }
         }
     }

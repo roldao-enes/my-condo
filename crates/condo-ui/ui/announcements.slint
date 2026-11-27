@@ -2,11 +2,11 @@ import { Theme } from "theme.slint";
 import { Icons } from "icons.slint";
 import { Backend } from "state.slint";
 import { ListView, ScrollView } from "std-widgets.slint";
-import { AppButton, TextField, TextArea, SelectField, Badge, Card, Modal, EmptyState, FormActions, InlineError, PageHeading } from "components.slint";
+import { Skeleton, AppButton, TextField, TextArea, SelectField, Badge, Card, Modal, EmptyState, FormActions, InlineError, PageHeading } from "components.slint";
 import { Cell, HeadRow, RowLine } from "finances.slint";
 
 export component AnnouncementsPage inherits VerticalLayout {
-    spacing: 16px;
+    spacing: 24px;
     PageHeading {
         eyebrow: "GESTÃO DO CONDOMÍNIO";
         title: "Comunicados";
@@ -70,7 +70,7 @@ export component AnnouncementsPage inherits VerticalLayout {
             ListView {
                 vertical-stretch: 1;
                 for ann in Backend.ann-rows: row := RowLine {
-                    height: 54px;
+                    height: 64px;
                     Cell {
                         total: row.width;
                         h: row.height;
@@ -130,7 +130,7 @@ export component AnnouncementsPage inherits VerticalLayout {
 }
 
 export component AnnouncementPage inherits VerticalLayout {
-    spacing: 14px;
+    spacing: 24px;
     PageHeading {
         eyebrow: "COMUNICADOS";
         title: Backend.ann-subject;
@@ -153,6 +153,14 @@ export component AnnouncementPage inherits VerticalLayout {
         }
     }
 
+    // Sending runs in the background, so show that something is happening.
+    if Backend.ann-sending: Skeleton {
+        height: 6px;
+        corner: 3px;
+        accessible-role: text;
+        accessible-label: "A enviar comunicados";
+    }
+
     Card {
         height: min(message.preferred-height + 32px, 170px);
         ScrollView {
@@ -172,8 +180,8 @@ export component AnnouncementPage inherits VerticalLayout {
     if !Backend.ann-queued: Card {
         height: 140px;
         VerticalLayout {
-            padding: 20px;
-            spacing: 12px;
+            padding: 28px;
+            spacing: 16px;
             audience := SelectField {
                 label: "Destinatários";
                 placeholder-first: false;
@@ -285,7 +293,7 @@ export component AnnouncementPage inherits VerticalLayout {
                 ListView {
                     vertical-stretch: 1;
                     for job in Backend.ann-jobs: jr := RowLine {
-                        height: 56px;
+                        height: 66px;
                         Cell {
                             total: jr.width;
                             h: jr.height;

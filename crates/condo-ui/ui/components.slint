@@ -38,6 +38,8 @@ export component AppButton inherits Rectangle {
     border-color: Theme.border;
     background: root.kind == "primary" ? (touch.has-hover && root.enabled ? Theme.green-hover : Theme.green) : (touch.has-hover && root.enabled ? Theme.surface-alt : root.kind == "secondary" ? Theme.surface : transparent);
     opacity: root.enabled ? 1.0 : 0.5;
+    animate background { duration: 150ms; easing: ease-out; }
+    animate opacity { duration: 150ms; }
 
     focus := FocusScope {
         enabled: root.enabled;
@@ -112,6 +114,7 @@ export component IconButton inherits Rectangle {
     height: 36px;
     border-radius: Theme.radius;
     background: touch.has-hover ? Theme.surface-alt : transparent;
+    animate background { duration: 150ms; easing: ease-out; }
     Icon {
         source: root.icon;
         tint: Theme.muted;
@@ -427,9 +430,20 @@ export component Notice inherits Rectangle {
     in property <string> kind;
     in property <string> text;
     callback dismiss();
+    out property <float> appear: 0;
     height: row.preferred-height + 24px;
     border-radius: Theme.radius;
     background: root.kind == "error" ? Theme.danger-soft : Theme.success-soft;
+    border-width: 1px;
+    border-color: Theme.border;
+    drop-shadow-blur: 28px;
+    drop-shadow-color: Theme.shadow-md;
+    drop-shadow-offset-y: 8px;
+    opacity: root.appear;
+    animate appear { duration: 280ms; easing: cubic-bezier(0.2, 0.9, 0.3, 1.2); }
+    init => {
+        root.appear = 1;
+    }
     accessible-role: AccessibleRole.text;
     accessible-label: root.text;
 
@@ -476,11 +490,42 @@ export component Notice inherits Rectangle {
     }
 }
 
+// Wraps a page so it fades and settles into place when it appears.
+export component FadeIn inherits Rectangle {
+    property <float> appear: 0;
+    opacity: root.appear;
+    y: (1 - root.appear) * 10px;
+    animate appear { duration: 260ms; easing: ease-out; }
+    init => {
+        root.appear = 1;
+    }
+    @children
+}
+
+// A placeholder block shown while content is loading. A soft highlight sweeps across it so the
+// user can tell the app is working. The sweep only runs while the placeholder exists.
+export component Skeleton inherits Rectangle {
+    in property <length> corner: 6px;
+    background: Theme.surface-alt;
+    border-radius: root.corner;
+    clip: true;
+    accessible-role: none;
+
+    Rectangle {
+        width: parent.width * 0.6;
+        x: -self.width + (parent.width + self.width) * mod(animation-tick() / 1.4s, 1.0);
+        background: @linear-gradient(90deg, transparent 0%, Theme.border 50%, transparent 100%);
+    }
+}
+
 export component Card inherits Rectangle {
     background: Theme.surface;
-    border-radius: 10px;
+    border-radius: Theme.radius-card;
     border-width: 1px;
     border-color: Theme.border;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: Theme.shadow-sm;
+    drop-shadow-offset-y: 4px;
 }
 
 export component Modal inherits Rectangle {
@@ -490,6 +535,12 @@ export component Modal inherits Rectangle {
     background: Theme.scrim;
     accessible-role: groupbox;
     accessible-label: root.title;
+
+    property <float> appear: 0;
+    animate appear { duration: 240ms; easing: ease-out; }
+    init => {
+        root.appear = 1;
+    }
 
     // Swallows clicks so nothing behind the dialog can be pressed.
     TouchArea { }
@@ -508,18 +559,19 @@ export component Modal inherits Rectangle {
             width: min(root.card-width, root.width - 32px);
             height: min(content.preferred-height, root.height - 32px);
             x: (root.width - self.width) / 2;
-            y: (root.height - self.height) / 2;
+            y: (root.height - self.height) / 2 + (1 - root.appear) * 16px;
+            opacity: root.appear;
             background: Theme.surface;
             border-radius: 12px;
             border-width: 1px;
             border-color: Theme.border;
-            drop-shadow-blur: 30px;
-            drop-shadow-color: #00000050;
-            drop-shadow-offset-y: 8px;
+            drop-shadow-blur: 48px;
+            drop-shadow-color: #00000060;
+            drop-shadow-offset-y: 16px;
 
             content := VerticalLayout {
-                padding: 24px;
-                spacing: 16px;
+                padding: 32px;
+                spacing: 20px;
                 HorizontalLayout {
                     Text {
                         text: root.title;
@@ -658,15 +710,18 @@ export component EmptyState inherits Rectangle {
     in property <string> action;
     in property <image> action-icon;
     callback action-clicked();
-    height: col.preferred-height + 56px;
-    border-radius: 10px;
+    height: col.preferred-height + 80px;
+    border-radius: Theme.radius-card;
     border-width: 1px;
     border-color: Theme.border;
     background: Theme.surface;
+    drop-shadow-blur: 18px;
+    drop-shadow-color: Theme.shadow-sm;
+    drop-shadow-offset-y: 4px;
 
     col := VerticalLayout {
-        padding: 28px;
-        spacing: 10px;
+        padding: 40px;
+        spacing: 14px;
         alignment: center;
         HorizontalLayout {
             alignment: center;
@@ -819,9 +874,10 @@ export component NavItem inherits Rectangle {
     in property <string> text;
     in property <bool> active: false;
     callback clicked();
-    height: 42px;
+    height: 46px;
     border-radius: Theme.radius;
     background: root.active ? Theme.green-soft : (touch.has-hover ? Theme.surface-alt : transparent);
+    animate background { duration: 150ms; easing: ease-out; }
     accessible-role: tab;
     accessible-label: root.text;
     accessible-checked: root.active;
@@ -867,10 +923,10 @@ export component StatTile inherits Card {
     in property <image> icon;
     in property <color> tone: Theme.green-soft;
     in property <color> tone-text: Theme.green-text;
-    height: 130px;
+    height: 152px;
     VerticalLayout {
-        padding: 18px;
-        spacing: 4px;
+        padding: 24px;
+        spacing: 6px;
         HorizontalLayout {
             Text {
                 text: root.label;

@@ -21,8 +21,8 @@ export component Shell inherits Rectangle {
             }
 
             VerticalLayout {
-                padding: 20px;
-                spacing: 6px;
+                padding: 24px;
+                spacing: 8px;
 
                 HorizontalLayout {
                     spacing: 10px;
@@ -192,11 +192,14 @@ export component Shell inherits Rectangle {
             horizontal-stretch: 1;
 
             Rectangle {
-                height: 52px;
+                height: 60px;
                 background: Theme.surface;
+                drop-shadow-blur: 12px;
+                drop-shadow-color: Theme.shadow-sm;
+                drop-shadow-offset-y: 2px;
                 HorizontalLayout {
-                    padding-left: 28px;
-                    padding-right: 28px;
+                    padding-left: 40px;
+                    padding-right: 40px;
                     spacing: 6px;
                     VerticalLayout {
                         alignment: center;
@@ -230,8 +233,9 @@ export component Shell inherits Rectangle {
 
             VerticalLayout {
                 vertical-stretch: 1;
-                padding: 28px;
-                spacing: 16px;
+                padding: 40px;
+                padding-top: 32px;
+                spacing: 28px;
 
                 if Backend.update-visible: Rectangle {
                     height: update-row.preferred-height;
@@ -287,15 +291,20 @@ export component Shell inherits Rectangle {
                     }
                 }
 
-                if Backend.notice-text != "": Notice {
-                    kind: Backend.notice-kind;
-                    text: Backend.notice-text;
-                    dismiss => {
-                        Backend.dismiss-notice();
-                    }
-                }
                 @children
             }
+        }
+    }
+
+    // Toast: floats over the page, top right, instead of pushing the content down.
+    if Backend.notice-text != "": toast := Notice {
+        kind: Backend.notice-kind;
+        text: Backend.notice-text;
+        width: min(440px, parent.width - 80px);
+        x: parent.width - self.width - 40px;
+        y: 72px - (1 - self.appear) * 16px;
+        dismiss => {
+            Backend.dismiss-notice();
         }
     }
 }

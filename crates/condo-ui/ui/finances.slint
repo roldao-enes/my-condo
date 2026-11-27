@@ -14,8 +14,8 @@ export component Cell inherits Text {
     // Size of the row this cell sits in.
     in property <length> total;
     in property <length> h;
-    x: root.total * root.from + 16px;
-    width: root.total * root.span - 24px;
+    x: root.total * root.from + 24px;
+    width: root.total * root.span - 32px;
     height: root.h;
     font-size: root.head ? 13px : 14px;
     font-weight: root.head ? 600 : 400;
@@ -26,7 +26,7 @@ export component Cell inherits Text {
 }
 
 export component HeadRow inherits Rectangle {
-    height: 40px;
+    height: 48px;
     background: Theme.surface-alt;
 }
 
@@ -128,7 +128,7 @@ component SectionTitle inherits HorizontalLayout {
 }
 
 export component FinancesPage inherits VerticalLayout {
-    spacing: 14px;
+    spacing: 24px;
 
     PageHeading {
         eyebrow: "GESTÃO DO CONDOMÍNIO";
@@ -170,7 +170,7 @@ export component FinancesPage inherits VerticalLayout {
     }
 
     HorizontalLayout {
-        spacing: 12px;
+        spacing: 20px;
         for tile in Backend.fin-tiles: MiniStat {
             label: tile.label;
             value: tile.value;
@@ -179,8 +179,8 @@ export component FinancesPage inherits VerticalLayout {
     }
 
     HorizontalLayout {
-        spacing: 24px;
-        height: 34px;
+        spacing: 32px;
+        height: 40px;
         padding-left: 4px;
         for item in Backend.fin-breakdown: HorizontalLayout {
             spacing: 8px;
@@ -225,7 +225,7 @@ export component FinancesPage inherits VerticalLayout {
     }
 
     HorizontalLayout {
-        spacing: 12px;
+        spacing: 16px;
         tabs := Tabs {
             width: 350px;
             labels: ["Movimentos", "Despesas", "Dívida", "Etiquetas"];
@@ -340,13 +340,13 @@ export component FinancesPage inherits VerticalLayout {
             ListView {
                 vertical-stretch: 1;
                 for tx in Backend.fin-tx: row := RowLine {
-                    height: 62px;
+                    height: 70px;
                     Rectangle {
                         x: 0px;
                         width: row.width * 0.12;
                         VerticalLayout {
                             alignment: center;
-                            padding-left: 16px;
+                            padding-left: 24px;
                             Text {
                                 text: tx.date;
                                 font-size: 14px;
@@ -613,7 +613,7 @@ export component FinancesPage inherits VerticalLayout {
                 ListView {
                     vertical-stretch: 1;
                     for charge in Backend.fin-charges: crow := RowLine {
-                        height: 54px;
+                        height: 62px;
                         Rectangle {
                             x: 16px;
                             width: crow.width * 0.24 - 24px;
@@ -774,7 +774,7 @@ export component FinancesPage inherits VerticalLayout {
                 ListView {
                     vertical-stretch: 1;
                     for tag in Backend.fin-tags: trow := RowLine {
-                        height: 50px;
+                        height: 58px;
                         Cell {
                             total: trow.width;
                             h: trow.height;
@@ -1227,7 +1227,7 @@ export component ReportDialog inherits Modal {
         height: 300px;
         content-height: sections.preferred-height;
         sections := VerticalLayout {
-            spacing: 14px;
+            spacing: 20px;
             padding-right: 8px;
             for section in Backend.report-sections: VerticalLayout {
                 spacing: 4px;

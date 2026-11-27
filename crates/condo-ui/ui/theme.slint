@@ -28,5 +28,17 @@ export global Theme {
     out property <color> focus: dark ? #78b9a2 : #3f9d7e;
     out property <color> scrim: #0000006b;
 
-    out property <length> radius: 7px;
+    out property <length> radius: 8px;
+    out property <length> radius-card: 14px;
+
+    // Spacing scale (4px grid). Pages and cards use these so the rhythm stays consistent.
+    out property <length> space-xs: 6px;
+    out property <length> space-sm: 12px;
+    out property <length> space-md: 20px;
+    out property <length> space-lg: 28px;
+    out property <length> space-xl: 40px;
+
+    // Elevation: soft, low-opacity, offset downwards. Dark mode needs a heavier shadow to be seen.
+    out property <color> shadow-sm: dark ? #00000050 : #1a2b2312;
+    out property <color> shadow-md: dark ? #00000080 : #1a2b231f;
 }

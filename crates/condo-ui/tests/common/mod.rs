@@ -173,6 +173,12 @@ impl Harness {
     }
 
     pub fn snapshot(&self, name: &str) {
+        // Let enter animations (fades, toasts) finish so the picture shows the settled screen.
+        // The first step instantiates anything that just appeared (which starts its animation),
+        // the second plays that animation out.
+        for _ in 0..2 {
+            i_slint_backend_testing::mock_elapsed_time(std::time::Duration::from_millis(600));
+        }
         let buffer = self.ui.window().take_snapshot().expect("headless render");
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/ui-screenshots");
         std::fs::create_dir_all(&dir).unwrap();
@@ -302,7 +308,7 @@ impl Harness {
     pub fn tall(&self) {
         self.ui
             .window()
-            .set_size(slint::PhysicalSize::new(1360, 1700));
+            .set_size(slint::PhysicalSize::new(1360, 2200));
     }
 }
 
