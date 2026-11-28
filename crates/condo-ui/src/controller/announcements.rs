@@ -52,7 +52,7 @@ impl Controller {
     pub(super) fn refresh_announcements(&mut self, ui: &AppWindow) {
         let backend = ui.global::<Backend>();
         backend.set_ann_sending(self.sending.is_some());
-        let Ok(items) = announcements::list(&self.conn) else {
+        let Ok(items) = announcements::list_in_year(&self.conn, self.year()) else {
             self.notice(ui, "error", UNEXPECTED);
             return;
         };

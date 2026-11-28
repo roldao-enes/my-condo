@@ -208,6 +208,14 @@ export global Backend {
     callback navigate(string);
     callback dismiss-notice();
 
+    // --- Year -----------------------------------------------------------------------------
+    // One year is shown at a time; the current year is the default. Past years can be filled in.
+    in property <[string]> year-options;
+    in property <int> selected-year-index;
+    in property <string> year-text;
+    // Index into `year-options` (0 is the current year).
+    callback select-year(int);
+
     // --- Residency ------------------------------------------------------------------------
     // Breadcrumb ("Visão geral") and heading ("Tudo em casa.") differ on the overview.
     in property <string> page-label;

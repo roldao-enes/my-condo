@@ -217,6 +217,19 @@ pub struct FinanceData {
     pub tags: Vec<TagView>,
 }
 
+/// The years that have any bank movement, quota or announcement, oldest first.
+pub fn years(conn: &Connection) -> rusqlite::Result<Vec<i32>> {
+    conn.prepare(
+        "SELECT DISTINCT CAST(substr(d, 1, 4) AS INTEGER) AS y FROM (
+           SELECT date AS d FROM finance_transactions
+           UNION ALL SELECT due_date FROM finance_charges
+           UNION ALL SELECT created_at FROM announcements
+         ) ORDER BY y",
+    )?
+    .query_map([], |row| row.get(0))?
+    .collect()
+}
+
 pub fn list(conn: &Connection) -> rusqlite::Result<FinanceData> {
     let transactions = conn
         .prepare(

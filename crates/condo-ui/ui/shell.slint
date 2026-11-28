@@ -1,11 +1,18 @@
 import { Theme } from "theme.slint";
 import { Icons } from "icons.slint";
 import { Backend } from "state.slint";
-import { Icon, IconButton, Avatar, NavItem, Notice, AppButton } from "components.slint";
+import { Icon, IconButton, Avatar, NavItem, Notice, AppButton, SelectField } from "components.slint";
 
 // Sidebar + top bar around whichever page is shown.
 export component Shell inherits Rectangle {
     background: Theme.page;
+
+    // The year is also changed from Rust (signing in, "back to this year"), and the selector
+    // loses its binding the first time someone picks from it, so it is told again here.
+    property <int> year-index: Backend.selected-year-index;
+    changed year-index => {
+        year-select.current-index = root.year-index;
+    }
 
     HorizontalLayout {
         // --- Sidebar -------------------------------------------------------------------
@@ -216,10 +223,16 @@ export component Shell inherits Rectangle {
 
                     VerticalLayout {
                         alignment: center;
-                        Text {
-                            text: "Espaço privado";
-                            font-size: 13px;
-                            color: Theme.muted;
+                        year-select := SelectField {
+                            width: 150px;
+                            label: "Ano";
+                            hide-label: true;
+                            placeholder-first: false;
+                            model: Backend.year-options;
+                            current-index: Backend.selected-year-index;
+                            selected(index) => {
+                                Backend.select-year(index);
+                            }
                         }
                     }
                 }
