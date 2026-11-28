@@ -163,6 +163,16 @@ pub struct AnnouncementSummary {
 
 /// Newest first, with delivery counts.
 pub fn list(conn: &Connection) -> rusqlite::Result<Vec<AnnouncementSummary>> {
+    list_in(conn, None)
+}
+
+/// Like [`list`], but only the announcements created in `year`.
+pub fn list_in_year(conn: &Connection, year: i32) -> rusqlite::Result<Vec<AnnouncementSummary>> {
+    list_in(conn, Some(year))
+}
+
+fn list_in(conn: &Connection, year: Option<i32>) -> rusqlite::Result<Vec<AnnouncementSummary>> {
+    let year = year.map(|y| format!("{y:04}"));
     conn.prepare(
         "SELECT a.id, a.subject, a.status, a.created_at,
                 count(j.id),
@@ -170,10 +180,11 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<AnnouncementSummary>> {
                 count(j.id) FILTER (WHERE j.status = 'failed')
            FROM announcements a
            LEFT JOIN email_jobs j ON j.announcement_id = a.id
+          WHERE ?1 IS NULL OR substr(a.created_at, 1, 4) = ?1
           GROUP BY a.id
           ORDER BY a.id DESC",
     )?
-    .query_map([], |row| {
+    .query_map([year], |row| {
         Ok(AnnouncementSummary {
             id: row.get(0)?,
             subject: row.get(1)?,

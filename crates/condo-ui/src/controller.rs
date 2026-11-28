@@ -6,7 +6,7 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use condo_app::audit::{anonymous_actor, quote, user_actor, AuditTrail, DEFAULT_MAX_BYTES};
 use condo_app::backup::{self, BackupError};
 use condo_app::paths::AppPaths;
@@ -90,6 +90,11 @@ pub struct Controller {
     now: Clock,
     query: String,
     history: bool,
+    /// The year being looked at; `None` is the current year, which keeps following the calendar.
+    /// Any other year is closed: it can be read but nothing in it can be changed.
+    year: Option<i32>,
+    /// The years in the selector, newest first (so row 0 is the current year).
+    year_choices: Vec<i32>,
     /// People page tab: owners (false) or residents (true).
     residents_tab: bool,
     directory: Directory,
@@ -195,6 +200,8 @@ impl Controller {
             now,
             query: String::new(),
             history: false,
+            year: None,
+            year_choices: vec![],
             residents_tab: false,
             directory: Directory {
                 units: vec![],
@@ -233,6 +240,56 @@ impl Controller {
 
     fn today(&self) -> NaiveDate {
         lisbon_date((self.now)())
+    }
+
+    /// The year being shown.
+    fn year(&self) -> i32 {
+        self.year.unwrap_or_else(|| self.today().year())
+    }
+
+    /// Chooses the year to show: row 0 of the selector is the current year.
+    pub fn select_year(&mut self, ui: &AppWindow, index: i32) {
+        let Some(&year) = usize::try_from(index)
+            .ok()
+            .and_then(|i| self.year_choices.get(i))
+        else {
+            return;
+        };
+        self.year = (year != self.today().year()).then_some(year);
+        self.fin = Default::default();
+        ui.global::<Backend>().set_fin_view(0);
+        self.close_dialog(ui);
+        self.refresh(ui);
+    }
+
+    /// Tells the window which years there are and which one is shown.
+    fn refresh_year(&mut self, ui: &AppWindow) {
+        let current = self.today().year();
+        // Every year from the one before the earliest with data to the current one, newest
+        // first, so an earlier year can always be filled in and none is skipped.
+        let earliest = condo_db::finance::years(&self.conn)
+            .unwrap_or_default()
+            .into_iter()
+            .chain([current, self.year()])
+            .min()
+            .unwrap_or(current);
+        self.year_choices = (earliest - 1..=current).rev().collect();
+        let backend = ui.global::<Backend>();
+        backend.set_year_options(strings(self.year_choices.iter().map(|y| {
+            if *y == current {
+                format!("{y} (atual)")
+            } else {
+                y.to_string()
+            }
+        })));
+        let shown = self.year();
+        backend.set_selected_year_index(
+            self.year_choices
+                .iter()
+                .position(|y| *y == shown)
+                .unwrap_or(0) as i32,
+        );
+        backend.set_year_text(shown.to_string().into());
     }
 
     fn actor(&self) -> AuditActor {
@@ -282,6 +339,7 @@ impl Controller {
         backend.set_screen("main".into());
         self.query.clear();
         self.history = false;
+        self.year = None;
         self.residents_tab = false;
         self.show_page(ui, "overview");
         if let Some(text) = self.upgrade_notice.take() {
@@ -380,6 +438,7 @@ impl Controller {
     /// Takes the window back to the sign-in screen with nothing of the session left in it.
     fn leave(&mut self, ui: &AppWindow) {
         self.session = None;
+        self.year = None;
         self.pending_restore = None;
         self.pending_import = None;
         self.finance = None;
@@ -473,7 +532,12 @@ impl Controller {
             self.notice(ui, "error", UNEXPECTED);
             return;
         };
-        self.directory = directory;
+        self.refresh_year(ui);
+        // A past year shows the units and people as they were at its end.
+        self.directory = match NaiveDate::from_ymd_opt(self.year(), 12, 31) {
+            Some(year_end) if year_end < self.today() => directory.as_of(year_end),
+            _ => directory,
+        };
         let dir = &self.directory;
 
         self.unit_ids = std::iter::once(None)
@@ -1363,6 +1427,7 @@ pub fn attach(ui: &AppWindow, controller: Controller) -> Rc<RefCell<Controller>>
     ));
     on!(on_logout, |c, ui| c.logout(&ui));
     on!(on_navigate, |c, ui, page| c.navigate(&ui, page.as_str()));
+    on!(on_select_year, |c, ui, index| c.select_year(&ui, index));
     on!(on_dismiss_notice, |c, ui| c.dismiss_notice(&ui));
     on!(on_search, |c, ui, query| c.search(&ui, query.as_str()));
     on!(on_set_history, |c, ui, history| c.set_history(&ui, history));

@@ -470,6 +470,20 @@ pub struct Directory {
     pub relationships: Vec<Relationship>,
 }
 
+impl Directory {
+    /// The directory as it was on `day`: relationships that began later are left out, and those
+    /// that had not ended before it are shown as still going. The ids are the real ones.
+    pub fn as_of(mut self, day: NaiveDate) -> Self {
+        self.relationships.retain(|r| r.start_date <= day);
+        for r in &mut self.relationships {
+            if r.end_date.is_some_and(|end| end >= day) {
+                r.end_date = None;
+            }
+        }
+        self
+    }
+}
+
 /// Everything the residency screens show. Units and people are sorted with Portuguese
 /// collation; relationships are most recent first.
 pub fn list(conn: &Connection) -> rusqlite::Result<Directory> {

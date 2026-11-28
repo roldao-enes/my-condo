@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use chrono::Datelike;
 use condo_app::audit::quote;
 use condo_audit::AuditFailure;
 use condo_core::balances::finance_balances;
@@ -67,6 +66,7 @@ impl Controller {
     fn finance_filters(&self) -> fin::Filters {
         fin::Filters {
             query: self.query.clone(),
+            year: Some(self.year()),
             ..self.fin.clone()
         }
     }
@@ -795,7 +795,7 @@ impl Controller {
         let Some(data) = self.finance.as_ref() else {
             return;
         };
-        let (today, year) = (self.today(), self.today().year());
+        let (today, year) = (self.today(), self.year());
         let transactions: Vec<_> = data
             .transactions
             .iter()
