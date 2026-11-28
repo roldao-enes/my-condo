@@ -69,9 +69,8 @@ pub struct Filters {
     pub month: Option<String>,
     pub query: String,
     pub category: CategoryFilter,
-    /// The one year the screen shows, or `None` for every year. Debt carries over: it is what
-    /// was owed at the end of that year (or today, for the current year), counting the quotas of
-    /// earlier years that were still unpaid.
+    /// The one year the screen shows, or `None` for every year. Debt is not limited to it: it is
+    /// what is really owed today, so unpaid quotas of earlier years stay in until paid.
     pub year: Option<i32>,
 }
 
@@ -226,37 +225,9 @@ fn tx_row(t: &TransactionView, paid: &HashMap<i64, i64>) -> TxRow {
     }
 }
 
-/// What is owed as of the end of `year` (as of `today`, if the year is not over yet): the quotas
-/// that fell due up to then, less the payments of movements dated up to then. Without a year,
-/// everything is counted as of today.
-fn balances_for_year(data: &FinanceData, today: NaiveDate, year: Option<i32>) -> Balances {
-    let Some(year_end) = year.and_then(|y| NaiveDate::from_ymd_opt(y, 12, 31)) else {
-        return balances(data, today);
-    };
-    let charges: Vec<_> = data
-        .charges
-        .iter()
-        .filter(|c| c.due_date <= year_end)
-        .cloned()
-        .collect();
-    let paid_by: HashMap<i64, NaiveDate> =
-        data.transactions.iter().map(|t| (t.id, t.date)).collect();
-    let payments: Vec<_> = data
-        .payments
-        .iter()
-        .filter(|p| {
-            paid_by
-                .get(&p.transaction_id)
-                .is_some_and(|d| *d <= year_end)
-        })
-        .cloned()
-        .collect();
-    finance_balances(&charges, &payments, today.min(year_end))
-}
-
 pub fn page(data: &FinanceData, today: NaiveDate, filters: &Filters) -> FinancePage {
     let paid = paid_by_transaction(data);
-    let balances = balances_for_year(data, today, filters.year);
+    let balances = balances(data, today);
 
     // Movements of the year shown (all of them without one), newest first.
     let in_year: Vec<&TransactionView> = data
@@ -374,8 +345,8 @@ pub fn page(data: &FinanceData, today: NaiveDate, filters: &Filters) -> FinanceP
         })
         .collect();
 
-    // The quotas that fell due in the year shown, and those of earlier years still unpaid at its
-    // end, so that nothing owed disappears from view when the year changes.
+    // The quotas that fell due in the year shown, and those of earlier years still unpaid, so that
+    // nothing owed disappears from view when the year changes.
     let shown_year = |c: &condo_core::balances::ChargeBalance| match filters.year {
         None => true,
         Some(y) => {
@@ -609,10 +580,9 @@ mod tests {
     }
 
     #[test]
-    fn a_year_limits_what_is_listed_and_debt_carries_over_into_it() {
+    fn a_year_limits_what_is_listed_but_debt_is_the_real_total_and_accumulates() {
         let mut data = data();
-        // 2024: a movement, a quota of 4000 and a payment of 1000 towards it in 2024; the rest
-        // (1500) is only paid in 2025.
+        // 2024: a movement, and a quota of 4000 of which 1000 was paid then; 1500 more only in 2025.
         let mut paid_in_2024 = tx(0, d(2024, 12, 20), "TRF Maria Silva", 1000, 6000);
         paid_in_2024.owner_id = Some(1);
         paid_in_2024.unit_id = Some(1);
@@ -634,18 +604,14 @@ mod tests {
                 amount: 4000,
             },
         );
-        data.payments.push(Payment {
-            id: 10,
-            transaction_id: 0,
-            charge_id: 0,
-            amount: 1000,
-        });
-        data.payments.push(Payment {
-            id: 11,
-            transaction_id: 4,
-            charge_id: 0,
-            amount: 1500,
-        });
+        for (id, transaction_id, amount) in [(10, 0, 1000), (11, 4, 1500)] {
+            data.payments.push(Payment {
+                id,
+                transaction_id,
+                charge_id: 0,
+                amount,
+            });
+        }
         let today = d(2025, 6, 15);
         let in_year = |year| Filters {
             year: Some(year),
@@ -653,39 +619,50 @@ mod tests {
             ..Filters::default()
         };
 
-        // 2024, looked at later: its own movement and quota; what was owed at its end was 3000,
-        // all of it overdue. The 2025 payment is not counted yet.
+        // What is owed today: 1500 left of the 2024 quota, 5000 of June, 8000 of July not yet due.
+        let (overdue, total) = (
+            money(6500),
+            format!("{} por liquidar no total", money(14500)),
+        );
+
+        // 2024 lists only its own movement and quota, yet the debt is the real one.
         let past = page(&data, today, &in_year(2024));
         assert_eq!(past.month_labels, ["12/2024"]);
         assert_eq!(past.subtitle, "1 movimentos · 1 quotas registadas");
         assert_eq!(past.charges.len(), 1);
-        assert_eq!(past.tiles[3].value, money(3000));
         assert_eq!(
-            past.tiles[3].caption,
-            format!("{} por liquidar no total", money(3000))
+            (&past.tiles[3].value, &past.tiles[3].caption),
+            (&overdue, &total)
         );
 
-        // 2025, the current year: quotas of 2025 plus the carried-over 2024 one, now down to 1500.
-        // Overdue today: 1500 (2024) + 5000 (June), and 8000 not yet due in July: 14500 in all.
+        // 2025 lists its own quotas and the unpaid one carried over from 2024.
         let current = page(&data, today, &in_year(2025));
         assert_eq!(current.month_labels, ["06/2025", "05/2025", "02/2025"]);
         assert_eq!(current.charges.len(), 3);
-        assert_eq!(current.tiles[3].value, money(6500));
         assert_eq!(
-            current.tiles[3].caption,
-            format!("{} por liquidar no total", money(14500))
+            (&current.tiles[3].value, &current.tiles[3].caption),
+            (&overdue, &total)
         );
 
-        // The year after inherits all of it: nothing of its own, three quotas carried over.
+        // The year after has nothing of its own but inherits what is unpaid.
         let next = page(&data, today, &in_year(2026));
         assert!(next.transactions.is_empty());
         assert_eq!(next.charges.len(), 3);
-        assert_eq!(next.tiles[3].value, current.tiles[3].value);
+        assert_eq!(
+            (&next.tiles[3].value, &next.tiles[3].caption),
+            (&overdue, &total)
+        );
 
-        // A year before everything has nothing owed.
-        let before = page(&data, today, &in_year(2023));
-        assert!(before.transactions.is_empty() && before.charges.is_empty());
-        assert_eq!(before.tiles[3].value, money(0));
+        // Paying the rest of the 2024 quota takes it out of every later year's list.
+        data.payments.push(Payment {
+            id: 12,
+            transaction_id: 3,
+            charge_id: 0,
+            amount: 1500,
+        });
+        assert_eq!(page(&data, today, &in_year(2025)).charges.len(), 2);
+        assert_eq!(page(&data, today, &in_year(2026)).charges.len(), 2);
+        assert_eq!(page(&data, today, &in_year(2024)).charges.len(), 1);
     }
 
     #[test]
