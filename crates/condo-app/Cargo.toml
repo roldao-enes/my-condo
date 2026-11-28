@@ -1,6 +1,6 @@
 [package]
 name = "condo-app"
-version = "1.3.0"
+version = "1.4.0"
 description = "Application services for Meu Condominio (everything the UI calls, minus the UI)"
 edition.workspace = true
 rust-version.workspace = true
